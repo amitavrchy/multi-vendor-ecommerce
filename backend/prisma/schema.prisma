@@ -5,6 +5,9 @@ datasource db {
   provider = "postgresql"
 }
 model User {
+  uploads Upload[]
+  disputes Dispute[]
+  disputeMessages DisputeMessage[]
   id String @id @default(cuid())
   email String @unique
   name String
@@ -116,6 +119,7 @@ model CartItem {
   @@unique([cartId, variantId])
 }
 model Coupon {
+  funding String @default("PLATFORM")
   code String @id
   percent Int
   maxDiscountMinor Int
@@ -144,6 +148,9 @@ model Order {
   @@index([userId, createdAt])
 }
 model VendorOrder {
+  disputes Dispute[]
+  vendorFundedDiscountMinor Int @default(0)
+  paymentFeeMinor Int @default(0)
   id String @id @default(cuid())
   orderId String
   order Order @relation(fields: [orderId], references: [id])
@@ -194,11 +201,14 @@ model Payment {
   amountMinor Int
   refundedMinor Int @default(0)
   providerRef String? @unique
+  refundRef String?
   idempotencyKey String @unique
   raw Json?
   refunds Refund[]
 }
 model Refund {
+  returnRequestId String? @unique
+  returnRequest ReturnRequest? @relation(fields:[returnRequestId], references:[id])
   id String @id @default(cuid())
   paymentId String
   payment Payment @relation(fields: [paymentId], references: [id])
@@ -211,13 +221,17 @@ model Refund {
 }
 model ReturnRequest {
   id String @id @default(cuid())
-  vendorOrderId String @unique
+  vendorOrderId String
   vendorOrder VendorOrder @relation(fields: [vendorOrderId], references: [id])
   status String @default("REQUESTED")
   reason String
   lines Json
+  restockingFeeMinor Int @default(0)
+  clawbackMinor Int @default(0)
+  refund Refund?
   note String?
   createdAt DateTime @default(now())
+  @@index([vendorOrderId])
 }
 model Review {
   id String @id @default(cuid())
@@ -248,10 +262,67 @@ model VendorLedgerEntry {
   createdAt DateTime @default(now())
 }
 model PayoutBatch {
+  scheduleKey String? @unique
   id String @id @default(cuid())
   status String @default("OPEN")
   scheduledFor DateTime @default(now())
   items PayoutItem[]
+}
+model PlatformPolicy {
+  id String @id @default("marketplace")
+  returnWindowDays Int @default(14)
+  restockingBps Int @default(0)
+  weeklyPayouts Boolean @default(false)
+  payoutWeekday Int @default(1)
+  reviewDelayDays Int @default(3)
+}
+model Upload {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  objectKey String @unique
+  scope String
+  contentType String
+  size Int
+  createdAt DateTime @default(now())
+}
+model Dispute {
+  id String @id @default(cuid())
+  vendorOrderId String
+  vendorOrder VendorOrder @relation(fields:[vendorOrderId],references:[id])
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  subject String
+  status String @default("OPEN")
+  resolution String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages DisputeMessage[]
+  @@index([userId, status])
+  @@index([vendorOrderId])
+}
+model DisputeMessage {
+  id String @id @default(cuid())
+  disputeId String
+  dispute Dispute @relation(fields:[disputeId],references:[id],onDelete:Cascade)
+  authorId String
+  author User @relation(fields:[authorId],references:[id])
+  authorName String
+  authorRole String
+  body String
+  createdAt DateTime @default(now())
+}
+model DeliveryReceipt {
+  id String @id @default(cuid())
+  eventId String
+  event OutboxEvent @relation(fields:[eventId],references:[id])
+  channel String
+  status String @default("PENDING")
+  providerRef String?
+  attempts Int @default(0)
+  lastError String?
+  updatedAt DateTime @default(now()) @updatedAt
+  @@unique([eventId, channel])
 }
 model PayoutItem {
   id String @id @default(cuid())
@@ -263,6 +334,7 @@ model PayoutItem {
   amountMinor Int
 }
 model OutboxEvent {
+  receipts DeliveryReceipt[]
   id String @id @default(cuid())
   type String
   payload Json

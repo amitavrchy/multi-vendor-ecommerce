@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { config } from './config';
+import { CacheService } from './cache.service';
 @Catch()
 class ApiErrors implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
@@ -35,8 +36,15 @@ async function main() {
   app.enableCors({ origin: config.CORS_ORIGINS.split(','), credentials: true });
   app.enableShutdownHooks();
   app.useGlobalFilters(new ApiErrors());
-  const buckets = new Map<string, { count: number; expires: number }>();
-  app.use((req: any, res: any, next: () => void) => {
+  const cache = app.get(CacheService);
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set(
+      'trust proxy',
+      process.env.TRUST_PROXY_HOPS ? Number(process.env.TRUST_PROXY_HOPS) : false,
+    );
+  app.use(async (req: any, res: any, next: () => void) => {
     if (
       req.method !== 'GET' &&
       !req.path.startsWith('/api/payments/webhooks/') &&
@@ -49,15 +57,8 @@ async function main() {
     const authAttempt =
       req.method === 'POST' && ['/api/auth/login', '/api/auth/register'].includes(req.path);
     const key = `${req.ip}:${authAttempt ? 'auth' : 'api'}`;
-    const now = Date.now();
-    let b = buckets.get(key);
-    if (!b || b.expires < now) {
-      b = { count: 0, expires: now + 60000 };
-      buckets.set(key, b);
-    }
-    if (++b.count > (key.endsWith(':auth') ? 30 : 300))
+    if (!(await cache.allow(key, authAttempt ? 30 : 600, 60000)))
       return res.status(429).json({ message: 'Too many requests. Please wait a minute.' });
-    if (buckets.size > 10000) for (const [k, v] of buckets) if (v.expires < now) buckets.delete(k);
     next();
   });
   await app.listen(config.PORT, '0.0.0.0');

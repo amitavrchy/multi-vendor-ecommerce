@@ -45,17 +45,22 @@ export class PayoutsController {
       take: 50,
     });
   }
-  @Post('run') async run() {
+  @Post('run') async run(scheduleKey?: string) {
     return this.db.atomic(async (tx) => {
+      if (scheduleKey) {
+        const existing = await tx.payoutBatch.findUnique({ where: { scheduleKey } });
+        if (existing) return existing;
+      }
       const orders = await tx.vendorOrder.findMany({
         where: {
           status: 'DELIVERED',
           payout: null,
-          returns: { none: { status: { not: 'REJECTED' } } },
+          returns: { none: { status: { in: ['REQUESTED', 'APPROVED', 'ITEM_RECEIVED'] } } },
           vendor: { status: 'ACTIVE', bankEncrypted: { not: null } },
         },
+        include: { returns: true },
       });
-      const eligible: typeof orders = [];
+      const eligible: ((typeof orders)[number] & { payoutMinor: number })[] = [];
       const remaining = new Map<string, number>();
       for (const o of orders) {
         if (!remaining.has(o.vendorId))
@@ -64,28 +69,35 @@ export class PayoutsController {
             (await tx.vendorBalance.findUnique({ where: { vendorId: o.vendorId } }))
               ?.availableMinor || 0,
           );
-        if (remaining.get(o.vendorId)! >= o.vendorNetMinor) {
-          eligible.push(o);
-          remaining.set(o.vendorId, remaining.get(o.vendorId)! - o.vendorNetMinor);
+        const payoutMinor = Math.max(
+          0,
+          o.vendorNetMinor -
+            o.returns
+              .filter((r) => r.status === 'REFUNDED')
+              .reduce((s, r) => s + r.clawbackMinor, 0),
+        );
+        if (payoutMinor > 0 && remaining.get(o.vendorId)! >= payoutMinor) {
+          eligible.push({ ...o, payoutMinor });
+          remaining.set(o.vendorId, remaining.get(o.vendorId)! - payoutMinor);
         }
       }
       if (!eligible.length)
         throw new BadRequestException('No eligible delivered orders with verified bank details');
-      const batch = await tx.payoutBatch.create({ data: { status: 'OPEN' } });
+      const batch = await tx.payoutBatch.create({ data: { status: 'OPEN', scheduleKey } });
       for (const o of eligible) {
         await tx.payoutItem.create({
           data: {
             batchId: batch.id,
             vendorId: o.vendorId,
             vendorOrderId: o.id,
-            amountMinor: o.vendorNetMinor,
+            amountMinor: o.payoutMinor,
           },
         });
         await tx.vendorBalance.update({
           where: { vendorId: o.vendorId },
           data: {
-            availableMinor: { decrement: o.vendorNetMinor },
-            pendingMinor: { increment: o.vendorNetMinor },
+            availableMinor: { decrement: o.payoutMinor },
+            pendingMinor: { increment: o.payoutMinor },
           },
         });
       }

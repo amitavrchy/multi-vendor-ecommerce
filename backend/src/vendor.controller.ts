@@ -54,14 +54,28 @@ export class VendorController {
   }
   @Roles('VENDOR_OWNER') @Post('kyc') async kyc(@Actor() u: Principal, @Body() b: unknown) {
     const d = input(
-      z.object({
-        legalName: z.string().min(3).max(120),
-        tradeLicense: z.string().min(5).max(100),
-        documentUrl: z.url().refine((v) => v.startsWith('https://'), 'Use a secure document URL'),
-      }),
+      z
+        .object({
+          legalName: z.string().min(3).max(120),
+          tradeLicense: z.string().min(5).max(100),
+          documentId: z.string().optional(),
+          documentUrl: z
+            .url()
+            .refine((v) => v.startsWith('https://'), 'Use a secure document URL')
+            .optional(),
+        })
+        .refine(
+          (v) => !!(v.documentId || v.documentUrl),
+          'Upload a document or provide its secure URL',
+        ),
       b,
     );
     const v = await this.scope.get(u, true);
+    if (
+      d.documentId &&
+      !(await this.db.upload.findFirst({ where: { id: d.documentId, userId: u.id, scope: 'KYC' } }))
+    )
+      throw new BadRequestException('Invalid verification upload');
     if (!['APPLIED', 'REJECTED', 'KYC_PENDING'].includes(v.status))
       throw new BadRequestException('KYC cannot be changed in this state');
     return this.db.atomic(async (tx) => {

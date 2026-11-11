@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Delete,
 } from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
@@ -21,7 +22,8 @@ const productSchema = z.object({
   image: z
     .string()
     .refine(
-      (v) => v.startsWith('/products/') || v.startsWith('https://'),
+      (v) =>
+        v.startsWith('/products/') || v.startsWith('/api/uploads/') || v.startsWith('https://'),
       'Use HTTPS or a product asset',
     ),
   priceMinor: z.number().int().min(100).max(100000000),
@@ -36,6 +38,41 @@ export class VendorCatalogController {
     private db: Db,
     private scope: VendorScope,
   ) {}
+  @Roles('VENDOR_OWNER') @Post(':id/variants') async variant(
+    @Actor() u: Principal,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    const d = input(
+      z.object({
+        sku: z.string().min(3).max(100),
+        priceMinor: z.number().int().min(100).max(100000000),
+        compareAtMinor: z.number().int().positive().optional(),
+        stockQty: z.number().int().min(0).max(100000),
+        attrs: z.record(z.string().max(50), z.string().max(100)),
+      }),
+      b,
+    );
+    const v = await this.scope.get(u, true);
+    const p = await this.db.product.findFirst({ where: { id, vendorId: v.id } });
+    if (!p) throw new NotFoundException();
+    return this.db.atomic(async (tx) => {
+      await tx.product.update({ where: { id }, data: { status: 'DRAFT' } });
+      return tx.productVariant.create({ data: { ...d, productId: id } });
+    });
+  }
+  @Roles('VENDOR_OWNER') @Delete(':id') async archive(
+    @Actor() u: Principal,
+    @Param('id') id: string,
+  ) {
+    const v = await this.scope.get(u, true);
+    const result = await this.db.product.updateMany({
+      where: { id, vendorId: v.id },
+      data: { status: 'ARCHIVED' },
+    });
+    if (!result.count) throw new NotFoundException();
+    return { ok: true };
+  }
   @Get() async list(@Actor() u: Principal) {
     const v = await this.scope.get(u);
     return this.db.product.findMany({

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { config } from './config';
 import { Db } from './db';
@@ -25,6 +25,12 @@ import { AdminController } from './admin.controller';
 import { PayoutsController } from './payouts.controller';
 import { JobsService } from './jobs.service';
 import { RealtimeGateway } from './realtime.gateway';
+import { UploadsController } from './uploads.controller';
+import { PolicyController } from './policy.controller';
+import { DisputesController } from './disputes.controller';
+import { DeliveryService } from './delivery.service';
+import { CacheService } from './cache.service';
+import { CacheInvalidation } from './cache.interceptor';
 @Module({
   imports: [
     JwtModule.register({
@@ -34,6 +40,9 @@ import { RealtimeGateway } from './realtime.gateway';
     }),
   ],
   controllers: [
+    UploadsController,
+    PolicyController,
+    DisputesController,
     AuthController,
     CatalogController,
     CartController,
@@ -50,6 +59,9 @@ import { RealtimeGateway } from './realtime.gateway';
     PayoutsController,
   ],
   providers: [
+    CacheService,
+    DeliveryService,
+    { provide: APP_INTERCEPTOR, useClass: CacheInvalidation },
     Db,
     ProviderRegistry,
     CheckoutService,

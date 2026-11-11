@@ -12,7 +12,7 @@ export class RefundsService {
     if (r.status !== 'PENDING') return;
     const result = await this.providers
       .get(r.payment.provider)
-      .refund(r.payment.providerRef!, r.amountMinor, r.idempotencyKey);
+      .refund(r.payment.refundRef || r.payment.providerRef!, r.amountMinor, r.idempotencyKey);
     if (result.status === 'PENDING') {
       await this.db.refund.update({
         where: { id },
@@ -35,11 +35,27 @@ export class RefundsService {
         data: { refundedMinor: { increment: r.amountMinor } },
       });
       const [kind, voId] = r.reason.split(':');
+      if (kind === 'LATE') {
+        const order = await tx.order.findUniqueOrThrow({ where: { id: r.payment.orderId } });
+        await tx.outboxEvent.create({
+          data: {
+            type: 'REFUND_COMPLETED',
+            payload: { orderId: order.id, userId: order.userId, amountMinor: r.amountMinor },
+          },
+        });
+        return { ok: true };
+      }
       const vo = await tx.vendorOrder.findUniqueOrThrow({
         where: { id: voId },
         include: { order: true, lines: true },
       });
       if (kind === 'RETURN') {
+        const rma = r.returnRequestId
+          ? await tx.returnRequest.findUniqueOrThrow({ where: { id: r.returnRequestId } })
+          : await tx.returnRequest.findFirstOrThrow({
+              where: { vendorOrderId: vo.id, status: 'ITEM_RECEIVED' },
+            });
+        const clawback = rma.clawbackMinor;
         const sale = await tx.vendorLedgerEntry.findUnique({
           where: { refId: `delivery:${vo.id}` },
         });
@@ -48,31 +64,42 @@ export class RefundsService {
             data: {
               vendorId: vo.vendorId,
               type: 'REFUND_CLAWBACK',
-              amountMinor: -vo.vendorNetMinor,
+              amountMinor: -clawback,
               refId: `refund:${id}`,
             },
           });
           await tx.vendorBalance.update({
             where: { vendorId: vo.vendorId },
-            data: { availableMinor: { decrement: vo.vendorNetMinor } },
+            data: { availableMinor: { decrement: clawback } },
           });
         }
         await tx.returnRequest.update({
-          where: { vendorOrderId: vo.id },
+          where: { id: rma.id },
           data: { status: 'REFUNDED' },
         });
-        for (const line of vo.lines)
+        for (const returned of rma.lines as { lineId: string; qty: number }[]) {
+          const line = vo.lines.find((l) => l.id === returned.lineId)!;
           await tx.productVariant.update({
             where: { id: line.variantId },
-            data: { stockQty: { increment: line.qty } },
+            data: { stockQty: { increment: returned.qty } },
           });
+        }
         const siblings = await tx.vendorOrder.findMany({
           where: { orderId: vo.orderId },
-          include: { returns: true },
+          include: { returns: true, lines: true },
         });
         if (
           siblings.every(
-            (s) => s.status === 'CANCELLED' || s.returns.some((t) => t.status === 'REFUNDED'),
+            (s) =>
+              s.status === 'CANCELLED' ||
+              s.lines.every(
+                (line) =>
+                  s.returns
+                    .filter((t) => t.status === 'REFUNDED')
+                    .flatMap((t) => t.lines as { lineId: string; qty: number }[])
+                    .filter((l) => l.lineId === line.id)
+                    .reduce((sum, l) => sum + l.qty, 0) === line.qty,
+              ),
           )
         )
           await tx.order.update({ where: { id: vo.orderId }, data: { status: 'RETURNED' } });

@@ -13,6 +13,7 @@ import { Db } from './db';
 import { Actor, Principal, Roles } from './auth/access';
 import { input } from './common/input';
 import { RefundsService } from './refunds.service';
+import { commission } from './common/money';
 @Controller('returns')
 export class ReturnsController {
   constructor(
@@ -21,25 +22,61 @@ export class ReturnsController {
   ) {}
   @Post() async request(@Actor() u: Principal, @Body() b: unknown) {
     const d = input(
-      z.object({ vendorOrderId: z.string(), reason: z.string().trim().min(10).max(1000) }),
+      z.object({
+        vendorOrderId: z.string(),
+        reason: z.string().trim().min(10).max(1000),
+        lines: z
+          .array(z.object({ lineId: z.string(), qty: z.number().int().min(1).max(99) }))
+          .min(1)
+          .optional(),
+      }),
       b,
     );
     return this.db.atomic(async (tx) => {
       const vo = await tx.vendorOrder.findFirst({
         where: { id: d.vendorOrderId, order: { userId: u.id } },
-        include: { lines: true },
+        include: { lines: true, returns: true },
       });
       if (!vo) throw new NotFoundException();
+      const policy = await tx.platformPolicy.findUnique({ where: { id: 'marketplace' } });
+      const windowDays = policy?.returnWindowDays ?? 14;
       if (
         vo.status !== 'DELIVERED' ||
         !vo.deliveredAt ||
-        Date.now() - vo.deliveredAt.getTime() > 14 * 86400000
+        Date.now() - vo.deliveredAt.getTime() > windowDays * 86400000
       )
-        throw new BadRequestException('Returns are available within 14 days of delivery');
-      if (await tx.returnRequest.findUnique({ where: { vendorOrderId: vo.id } }))
-        throw new BadRequestException('A return already exists for this shipment');
+        throw new BadRequestException(
+          `Returns are available within ${windowDays} days of delivery`,
+        );
+      const requested = d.lines || vo.lines.map((l) => ({ lineId: l.id, qty: l.qty }));
+      if (new Set(requested.map((l) => l.lineId)).size !== requested.length)
+        throw new BadRequestException('Duplicate return lines');
+      let goodsMinor = 0;
+      for (const line of requested) {
+        const original = vo.lines.find((l) => l.id === line.lineId);
+        if (!original) throw new BadRequestException('Unknown order line');
+        const reserved = vo.returns
+          .filter((r) => r.status !== 'REJECTED')
+          .flatMap((r) => r.lines as { lineId: string; qty: number }[])
+          .filter((l) => l.lineId === line.lineId)
+          .reduce((s, l) => s + l.qty, 0);
+        if (line.qty + reserved > original.qty)
+          throw new BadRequestException('Return quantity exceeds remaining purchased quantity');
+        goodsMinor += line.qty * original.unitPriceMinor;
+      }
+      const restockingFeeMinor = commission(goodsMinor, policy?.restockingBps ?? 0);
+      const clawbackMinor = Math.max(
+        0,
+        Math.floor((vo.vendorNetMinor * goodsMinor) / vo.goodsMinor) - restockingFeeMinor,
+      );
       return tx.returnRequest.create({
-        data: { ...d, lines: vo.lines.map((l) => ({ lineId: l.id, qty: l.qty })) },
+        data: {
+          vendorOrderId: d.vendorOrderId,
+          reason: d.reason,
+          lines: requested,
+          restockingFeeMinor,
+          clawbackMinor,
+        },
       });
     });
   }
@@ -63,7 +100,9 @@ export class ReturnsController {
     return this.db.atomic(async (tx) => {
       const r = await tx.returnRequest.findUnique({
         where: { id },
-        include: { vendorOrder: { include: { order: { include: { payment: true } } } } },
+        include: {
+          vendorOrder: { include: { lines: true, order: { include: { payment: true } } } },
+        },
       });
       if (!r) throw new NotFoundException();
       const allowed: Record<string, string[]> = {
@@ -75,7 +114,15 @@ export class ReturnsController {
       if (d.status === 'ITEM_RECEIVED') {
         const vo = r.vendorOrder;
         const payment = vo.order.payment!;
-        const amountMinor = vo.goodsMinor - vo.discountMinor;
+        const returnedGoods = (r.lines as { lineId: string; qty: number }[]).reduce(
+          (s, l) => s + l.qty * vo.lines.find((v) => v.id === l.lineId)!.unitPriceMinor,
+          0,
+        );
+        const amountMinor =
+          returnedGoods -
+          Math.floor((vo.discountMinor * returnedGoods) / vo.goodsMinor) -
+          r.restockingFeeMinor;
+        if (amountMinor <= 0) throw new BadRequestException('This return has no refundable amount');
         if (!['SUCCEEDED', 'COD_PENDING'].includes(payment.status))
           throw new BadRequestException('Payment is not refundable');
         const refund = await tx.refund.create({
@@ -84,6 +131,7 @@ export class ReturnsController {
             amountMinor,
             reason: `RETURN:${vo.id}`,
             idempotencyKey: `return:${id}`,
+            returnRequestId: id,
           },
         });
         await tx.outboxEvent.create({

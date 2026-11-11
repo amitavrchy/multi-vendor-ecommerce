@@ -135,7 +135,18 @@ export class CheckoutService {
                 shippingMinor: SHIPPING_MINOR,
                 discountMinor: discounts[n],
                 commissionMinor,
-                vendorNetMinor: totals[n] - commissionMinor,
+                vendorFundedDiscountMinor: coupon?.funding === 'VENDOR' ? discounts[n] : 0,
+                paymentFeeMinor: commission(
+                  totals[n],
+                  Number(process.env.PAYMENT_FEE_SHARE_BPS || 0),
+                ),
+                vendorNetMinor: Math.max(
+                  0,
+                  totals[n] -
+                    commissionMinor -
+                    (coupon?.funding === 'VENDOR' ? discounts[n] : 0) -
+                    commission(totals[n], Number(process.env.PAYMENT_FEE_SHARE_BPS || 0)),
+                ),
                 lines: {
                   create: items.map((i) => ({
                     variantId: i.variantId,

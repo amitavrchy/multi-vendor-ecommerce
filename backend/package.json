@@ -15,6 +15,8 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1166.0",
+    "@aws-sdk/s3-request-presigner": "^3.1166.0",
     "@nestjs/common": "^11.1.8",
     "@nestjs/core": "^11.1.8",
     "@nestjs/jwt": "^11.0.1",
@@ -23,11 +25,14 @@
     "@nestjs/websockets": "^11.1.8",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.63.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "helmet": "^8.1.0",
+    "ioredis": "^5.11.1",
+    "nodemailer": "^10.5.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.1",
@@ -37,7 +42,9 @@
   "devDependencies": {
     "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.5",
+    "@types/multer": "^2.3.0",
     "@types/node": "^24.10.0",
+    "@types/nodemailer": "^8.0.2",
     "prisma": "^7.10.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",

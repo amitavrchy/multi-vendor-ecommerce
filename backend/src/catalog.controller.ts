@@ -1,10 +1,11 @@
-import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { Db } from './db';
 import { Public } from './auth/access';
 import { input } from './common/input';
 import { PostgresSearch } from './search';
+import { CacheService } from './cache.service';
 export const productInclude = {
   vendor: { select: { id: true, storeName: true, slug: true } },
   category: true,
@@ -14,15 +15,20 @@ export const productInclude = {
 @Public()
 @Controller()
 export class CatalogController {
-  constructor(private db: Db) {}
+  constructor(
+    private db: Db,
+    @Optional() private cache?: CacheService,
+  ) {}
   @Get('categories') categories() {
-    return this.db.category.findMany({
-      include: {
-        _count: {
-          select: { products: { where: { status: 'ACTIVE', vendor: { status: 'ACTIVE' } } } },
+    const load = () =>
+      this.db.category.findMany({
+        include: {
+          _count: {
+            select: { products: { where: { status: 'ACTIVE', vendor: { status: 'ACTIVE' } } } },
+          },
         },
-      },
-    });
+      });
+    return this.cache ? this.cache.remember('categories', 300, load) : load();
   }
   @Get('search') search(@Query() query: unknown) {
     return this.products(query);
