@@ -3203,6 +3203,12 @@ td img {
 .form input[type='checkbox'] {
   width: 17px;
 }
+.form > label.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
 .upload-input {
   width: 100%;
   font-size: 14px;
