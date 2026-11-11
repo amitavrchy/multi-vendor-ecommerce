@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  role String @default("CUSTOMER")
+  passwordHash String
+  createdAt DateTime @default(now())
+  addresses Address[]
+  vendors Vendor[]
+  cart Cart?
+  orders Order[]
+  reviews Review[]
+  notifications Notification[]
+}
+model Address {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label String
+  name String
+  phone String
+  line1 String
+  city String
+  postalCode String
+}
+model Vendor {
+  id String @id @default(cuid())
+  slug String @unique
+  storeName String
+  description String @default("")
+  status String @default("APPLIED")
+  commissionBps Int @default(1000)
+  ownerId String
+  owner User @relation(fields: [ownerId], references: [id])
+  bankEncrypted String?
+  createdAt DateTime @default(now())
+  kyc VendorKyc?
+  products Product[]
+  orders VendorOrder[]
+  balance VendorBalance?
+  ledger VendorLedgerEntry[]
+  members VendorMember[]
+}
+model VendorMember {
+  id String @id @default(cuid())
+  vendorId String
+  userId String @unique
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+model VendorKyc {
+  vendorId String @id
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  documents Json
+  status String @default("KYC_PENDING")
+  note String?
+  reviewedAt DateTime?
+}
+model Category {
+  id String @id
+  name String
+  icon String
+  products Product[]
+  commissionBps Int?
+}
+model Product {
+  id String @id @default(cuid())
+  vendorId String
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  title String
+  slug String @unique
+  description String
+  image String
+  status String @default("DRAFT")
+  categoryId String
+  category Category @relation(fields: [categoryId], references: [id])
+  featured Boolean @default(false)
+  createdAt DateTime @default(now())
+  variants ProductVariant[]
+  reviews Review[]
+  @@index([vendorId, status])
+  @@index([categoryId, status])
+}
+model ProductVariant {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku String @unique
+  priceMinor Int
+  compareAtMinor Int?
+  stockQty Int
+  reservedQty Int @default(0)
+  attrs Json
+  cartItems CartItem[]
+  lines OrderLine[]
+  reservations StockReservation[]
+}
+model Cart {
+  id String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+model CartItem {
+  id String @id @default(cuid())
+  cartId String
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  qty Int
+  @@unique([cartId, variantId])
+}
+model Coupon {
+  code String @id
+  percent Int
+  maxDiscountMinor Int
+  minGoodsMinor Int
+  expiresAt DateTime
+  active Boolean @default(true)
+}
+model Order {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  status String @default("PENDING_PAYMENT")
+  currency String @default("BDT")
+  goodsMinor Int
+  shippingMinor Int
+  discountMinor Int
+  taxMinor Int @default(0)
+  grandMinor Int
+  shippingAddress Json
+  couponCode String?
+  createdAt DateTime @default(now())
+  vendorOrders VendorOrder[]
+  payment Payment?
+  reservations StockReservation[]
+  reviews Review[]
+  @@index([userId, createdAt])
+}
+model VendorOrder {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  vendorId String
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  status String @default("PENDING_PAYMENT")
+  goodsMinor Int
+  shippingMinor Int
+  discountMinor Int @default(0)
+  commissionMinor Int @default(0)
+  vendorNetMinor Int @default(0)
+  trackingNumber String?
+  deliveredAt DateTime?
+  lines OrderLine[]
+  returns ReturnRequest[]
+  payout PayoutItem?
+  @@index([vendorId, status])
+}
+model OrderLine {
+  id String @id @default(cuid())
+  vendorOrderId String
+  vendorOrder VendorOrder @relation(fields: [vendorOrderId], references: [id])
+  variantId String
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  titleSnapshot String
+  imageSnapshot String
+  unitPriceMinor Int
+  commissionBps Int
+  qty Int
+}
+model StockReservation {
+  id String @id @default(cuid())
+  variantId String
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  qty Int
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  expiresAt DateTime
+  status String @default("RESERVED")
+  @@index([expiresAt, status])
+}
+model Payment {
+  id String @id @default(cuid())
+  orderId String @unique
+  order Order @relation(fields: [orderId], references: [id])
+  provider String
+  status String @default("CREATED")
+  amountMinor Int
+  refundedMinor Int @default(0)
+  providerRef String? @unique
+  idempotencyKey String @unique
+  raw Json?
+  refunds Refund[]
+}
+model Refund {
+  id String @id @default(cuid())
+  paymentId String
+  payment Payment @relation(fields: [paymentId], references: [id])
+  amountMinor Int
+  status String @default("PENDING")
+  reason String
+  idempotencyKey String @unique
+  providerRef String?
+  createdAt DateTime @default(now())
+}
+model ReturnRequest {
+  id String @id @default(cuid())
+  vendorOrderId String @unique
+  vendorOrder VendorOrder @relation(fields: [vendorOrderId], references: [id])
+  status String @default("REQUESTED")
+  reason String
+  lines Json
+  note String?
+  createdAt DateTime @default(now())
+}
+model Review {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id])
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  rating Int
+  body String
+  createdAt DateTime @default(now())
+  @@unique([productId, userId])
+}
+model VendorBalance {
+  vendorId String @id
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  availableMinor Int @default(0)
+  pendingMinor Int @default(0)
+}
+model VendorLedgerEntry {
+  id String @id @default(cuid())
+  vendorId String
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  type String
+  amountMinor Int
+  refId String @unique
+  createdAt DateTime @default(now())
+}
+model PayoutBatch {
+  id String @id @default(cuid())
+  status String @default("OPEN")
+  scheduledFor DateTime @default(now())
+  items PayoutItem[]
+}
+model PayoutItem {
+  id String @id @default(cuid())
+  batchId String
+  batch PayoutBatch @relation(fields: [batchId], references: [id])
+  vendorId String
+  vendorOrderId String @unique
+  vendorOrder VendorOrder @relation(fields: [vendorOrderId], references: [id])
+  amountMinor Int
+}
+model OutboxEvent {
+  id String @id @default(cuid())
+  type String
+  payload Json
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  attempts Int @default(0)
+  lastError String?
+  @@index([processedAt, createdAt])
+}
+model WebhookEvent {
+  id String @id @default(cuid())
+  provider String
+  providerEventId String
+  payload Json
+  processedAt DateTime @default(now())
+  @@unique([provider, providerEventId])
+}
+model Notification {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title String
+  body String
+  read Boolean @default(false)
+  eventId String @unique
+  createdAt DateTime @default(now())
+}
