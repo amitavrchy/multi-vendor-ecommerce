@@ -1,0 +1,64 @@
+name: Marketplace checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bazaar
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: bazaar
+        ports: ['5432:5432']
+        options: --health-cmd="pg_isready -U bazaar" --health-interval=5s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://bazaar:ci-only-password@localhost:5432/bazaar
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret-at-least-thirty-two-characters-long
+      BANK_ENCRYPTION_KEY: '1212121212121212121212121212121212121212121212121212121212121212'
+      APP_URL: http://localhost:3187
+      CORS_ORIGINS: http://localhost:3187
+      PORT: '4187'
+      API_URL: http://localhost:4187
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:4187
+      SEED_PASSWORD: BazaarDemo2026!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - name: Start application and run browser workflows
+        run: |
+          npm run start -w backend > /tmp/bazaar-api.log 2>&1 &
+          npm run start -w frontend > /tmp/bazaar-web.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3187/api/products > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-report
+          path: |
+            playwright-report/
+            test-results/

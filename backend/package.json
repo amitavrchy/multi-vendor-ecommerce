@@ -10,6 +10,7 @@
     "test": "tsx --test test/*.test.ts",
     "test:integration": "tsx test/prepare-db.ts && tsx --test test/*.integration.ts",
     "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts"
   },

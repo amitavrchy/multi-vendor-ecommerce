@@ -1,0 +1,10 @@
+CREATE INDEX "Product_search_idx" ON "Product" USING GIN (to_tsvector('simple', title || ' ' || description));
+ALTER TABLE "ProductVariant" ADD CONSTRAINT "variant_stock_valid" CHECK ("stockQty" >= 0 AND "reservedQty" >= 0 AND "reservedQty" <= "stockQty");
+ALTER TABLE "ProductVariant" ADD CONSTRAINT "variant_price_valid" CHECK ("priceMinor" > 0);
+ALTER TABLE "CartItem" ADD CONSTRAINT "cart_quantity_valid" CHECK (qty > 0 AND qty <= 99);
+ALTER TABLE "OrderLine" ADD CONSTRAINT "line_quantity_valid" CHECK (qty > 0 AND "unitPriceMinor" > 0 AND "commissionBps" BETWEEN 0 AND 10000);
+ALTER TABLE "StockReservation" ADD CONSTRAINT "reservation_quantity_valid" CHECK (qty > 0);
+ALTER TABLE "Payment" ADD CONSTRAINT "payment_amount_valid" CHECK ("amountMinor" >= 0 AND "refundedMinor" >= 0 AND "refundedMinor" <= "amountMinor");
+ALTER TABLE "Refund" ADD CONSTRAINT "refund_amount_valid" CHECK ("amountMinor" > 0);
+ALTER TABLE "Vendor" ADD CONSTRAINT "vendor_commission_valid" CHECK ("commissionBps" BETWEEN 0 AND 10000);
+ALTER TABLE "Coupon" ADD CONSTRAINT "coupon_amounts_valid" CHECK (percent BETWEEN 1 AND 100 AND "maxDiscountMinor" >= 0 AND "minGoodsMinor" >= 0);
