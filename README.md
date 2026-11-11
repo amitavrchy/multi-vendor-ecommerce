@@ -36,16 +36,17 @@ Seed: 3 verified stores, 30 products, an address, and WELCOME10 (10% off goods a
 - Responsive storefront with minimum 14px text, reduced-motion support, keyboard/modal accessibility and local photography.
 - Full-text search, filters/sort/paging, categories, details, related products and browser-saved wishlists.
 - Registration, HTTP-only sessions, role/store scoping, profiles, addresses and notifications.
-- KYC document links, admin approval/suspension, team assignment, catalog drafts/editing/moderation and inventory.
+- Private KYC/product uploads, admin approval/suspension, team access management, product/variant editing, moderation and inventory.
 - Multi-store bags, coupons, integer BDT totals, split orders, atomic reservations, TTL expiry and idempotent checkout.
-- COD, configured Stripe Checkout and configured SSLCommerz with server-validated IPN.
-- Fulfillment/tracking, cancellation, verified reviews, shipment returns, refund outbox, ledger clawbacks and manual payouts.
+- COD, Stripe Checkout, SSLCommerz IPN, bKash tokenized checkout and Nagad signed/encrypted checkout with server verification.
+- Fulfillment, partial returns, configurable return/restocking policies, verified reviews, dispute conversations, refund outbox and ledger clawbacks.
+- Category/vendor commissions, platform/vendor-funded coupons, weekly payout batches, SMTP/SMS receipts/retries, delayed review requests, Redis cache/rate limiting and Socket.IO clustering.
 
 ## Integration boundaries
 
-This is a runnable development product, **not a certified live-money deployment**. Stripe/SSLCommerz require merchant credentials, public HTTPS callbacks and sandbox/live certification. **bKash/Nagad are disabled placeholder adapters**, not completed integrations. KYC accepts secure document URLs; direct S3 uploads remain. Notifications are in-app/Socket.IO; SMTP/SMS and scheduled review emails remain.
+The adapters and application workflows are implemented and automatically tested. External services still need your merchant credentials, public HTTPS callback URLs, SMTP/SMS configuration, and private S3-compatible storage for production uploads. Without credentials, payment methods stay unavailable and outbound delivery receipts are marked SKIPPED. Development uploads use ignored local disk storage. No real external charge or transfer was made during testing; merchant sandbox/live certification remains an operational step.
 
-Returns cover an entire vendor shipment within 14 days, without restocking fees or original-shipping refunds. Coupons are platform-funded. Payouts require actual external transfers and manual confirmation. COD/SSLCommerz and pending Stripe refunds require reconciliation before ledger adjustment. Late successful payments on expired orders require operator review.
+Returns accept individual items/quantities with snapshotted discount and net allocations. Admins configure the return window, restocking fee, review-email delay and payout weekday. Shipping is non-refundable on returns. Payouts prepare weekly or on demand and require actual external transfer confirmation, as the specification permits a stub transfer API. COD/SSLCommerz/mobile-wallet and pending Stripe refunds are operator-reconciled before ledger adjustment. Late successful payments on expired orders automatically enter the refund workflow.
 
 See [coverage](docs/COVERAGE.md), [architecture](docs/ARCHITECTURE.md), [operations](docs/OPERATIONS.md), and [asset credits](ASSETS.md).
 

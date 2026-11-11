@@ -10,18 +10,20 @@ Stripe needs secret/webhook keys. Register `/api/payments/webhooks/STRIPE` for C
 
 SSLCommerz needs store ID/password and sandbox/live configuration. IPN uses `/api/payments/webhooks/SSLCOMMERZ`; browser returns use `/api/payments/return`. IPN settles payment; browser returns only navigate. Refund in the merchant panel, then confirm settlement in admin. [Official protocol](https://developer.sslcommerz.com/docs.html).
 
-bKash/Nagad stay disabled regardless of configured keys. Implement/certify merchant protocols before enabling them. Configuration placeholders are not completed integrations.
+bKash needs its app key/secret, merchant username/password and checkout base URL. Nagad needs its merchant ID, merchant private key, gateway public key, API base URL and (where required) whitelisted server IP. Both use `/api/payments/webhooks/<CODE>` for browser callbacks. Callbacks are verified against persisted payment amounts/order references; untrusted browser success flags never settle orders. The worker retries pending mobile-payment reconciliation. Complete merchant sandbox certification before live use. See [bKash merchant sandbox](https://merchantdemo.sandbox.bka.sh/tokenized-checkout/version/v1.2.0-beta) and the [Nagad official plugin protocol reference](https://github.com/common-repository/nagad-payment-gateway).
 
-Admin → Operations shows failed/pending outbox events. Investigate exhausted retries and late payments. There is no dead-letter replay action or automated late-payment refund. Verify provider states before resuming/refunding.
+Admin → Operations shows failed/pending events and offers explicit retry. Late successful payments automatically enqueue a full refund without reviving cancelled shipments. Verify uncertain provider states before reconciling.
 
-COD/SSLCommerz refunds require an actual external refund, then its confirmation reference. Pending Stripe refunds also need provider reconciliation. Initiation alone does not adjust the ledger.
+COD/SSLCommerz/bKash/Nagad refunds require an actual external refund, then its confirmation reference. Pending Stripe refunds also need provider reconciliation. Initiation alone does not adjust the ledger.
 
-For payouts, configure encrypted bank details, deliver shipments, then prepare a batch. Available funds move to pending. Complete external transfers before confirming. Automatic weekly bank transfers are not connected.
+For payouts, configure encrypted bank details and deliver shipments. Admin → Marketplace settings can enable weekly batch preparation on a selected Dhaka weekday. Batch IDs are unique per schedule day. Available funds move to pending. Review protected account instructions, complete external transfers, then confirm. The bank-transfer boundary intentionally uses the specification's stub/manual transfer path.
 
 ## Deployment work remaining
 
-Configure HTTPS/secure cookies, private databases, backups, merchant credentials, private KYC storage and a persistent encryption key. Key rotation needs re-encryption. For replicas, add shared rate limiting, trusted proxy/IP rules and Socket.IO adapter/routing.
+Configure HTTPS/secure cookies, private databases, backups, merchant credentials and a persistent encryption key. Key rotation needs re-encryption. Redis supplies shared rate limits/cache and Socket.IO pub/sub; configure trusted proxy hops and load-balancer routing for the deployment.
 
-Complete COVERAGE.md's remaining integrations before treating the original full spec as complete. No external hosting was provisioned or deployed.
+Set S3_BUCKET/REGION/ENDPOINT and credentials for private uploads. Local disk is development-only. KYC reads require owner/admin authentication; product images are public. Set SMTP_URL/SMTP_FROM to deliver email and SMS_URL/SMS_AUTH_TOKEN for an HTTP SMS transport accepting `{to, body, idempotencyKey}`. The SMS endpoint must honor that idempotency key. Missing transports record SKIPPED; failed transports retry using durable receipts. SMTP is at least once, with stable Message-ID values.
+
+Optional CDN_PURGE_URL accepts a JSON POST `{tags:["catalog"]}` with an optional bearer token. Catalog responses carry the surrogate tag. Purge failures queue durable retries. Configure CDN cache rules for the intended public endpoints; personalized responses must remain private. No external hosting was provisioned or deployed.
 
 CI uses fresh PostgreSQL/Redis and runs typecheck, formatting, unit/integration tests, build, audit and Chromium workflows. Screenshots are ignored under `artifacts/`; failure reports/traces are ignored under `playwright-report/` and `test-results/`.

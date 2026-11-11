@@ -14,12 +14,12 @@
 6. Payout preparation moves available earnings to pending with a unique item per shipment. Operator-confirmed external transfer completes the batch.
 7. Received returns enqueue idempotent refunds. Settled/reconciled refunds claw back earnings and restock goods. Paid vendors may acquire negative available balances.
 
-Money uses integer minor units. Coupon rounding remainders go to the final vendor. Platform-funded promotions leave vendor earnings unchanged. Shipping snapshots ৳80 per vendor.
+Money uses integer minor units with exact BigInt-backed largest-remainder allocation. Coupon funding, vendor net and per-return unit allocations preserve every minor unit. Platform-funded promotions leave vendor earnings unchanged; vendor-funded promotions and configured payment fee shares reduce them. Shipping snapshots ৳80 per vendor.
 
 ## Background, search and security
 
-BullMQ/Redis schedules maintenance every ten seconds. Without Redis, a single-process timer runs it. Outbox events retry up to twenty times; notification IDs are unique. Socket.IO delivery may repeat, so clients reload authoritative records.
+BullMQ/Redis schedules maintenance every ten seconds. Without Redis, a single-process timer runs it. Jobs expire stock, reconcile mobile payments, queue delayed review requests and prepare weekly payout batches. Outbox events retry up to twenty times; notification IDs are unique. SMTP/SMS receipts deduplicate successful attempts and lease interrupted attempts. Socket.IO uses a Redis adapter and may deliver repeated events, so clients reload authoritative records.
 
 `SearchDriver` abstracts parameterized PostgreSQL full-text/substring search, filtering, ordering and pagination. A GIN expression index supports text matching. Elasticsearch is optional and unimplemented.
 
-Bank details use AES-256-GCM and are omitted from responses. Stripe validates raw signatures; SSLCommerz performs authenticated server validation. Browser returns never settle payment. Helmet, origin checks and per-process request buckets protect the API. Migrations enforce uniqueness, foreign keys and inventory/refund bounds. Replicas require shared rate limiting and Socket.IO routing.
+Bank details use AES-256-GCM; only protected administrator payout instructions decrypt them. Stripe validates raw signatures, SSLCommerz validates server-to-server, bKash queries authoritative payment state, and Nagad authenticates its encrypted/signed handshake before server verification. Browser success flags never settle payment. Helmet, origin checks and shared Redis rate buckets protect the API. Migrations enforce uniqueness, foreign keys and inventory/refund bounds. Redis caches categories/product details; successful mutations invalidate the catalog generation and optionally purge configured CDN surrogate tags, with durable retry on failure.
