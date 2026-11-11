@@ -5,5 +5,5 @@ export interface PaymentProvider {
   code:string; supportsPartialRefund:boolean; available:boolean;
   createIntent(input:CreateIntentInput):Promise<IntentResult>;
   parseWebhook(raw:Buffer,headers:Record<string,unknown>,body:unknown):Promise<NormalizedEvent>;
-  refund(ref:string,amountMinor:number,key:string):Promise<{providerRef:string}>;
+  refund(ref:string,amountMinor:number,key:string):Promise<{providerRef:string;status?:'PENDING'|'SUCCEEDED'}>;
 }

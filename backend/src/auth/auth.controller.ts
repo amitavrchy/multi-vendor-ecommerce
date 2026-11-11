@@ -18,7 +18,7 @@ export class AuthController {
   async register(@Body() body:unknown, @Res({passthrough:true}) res:Response) {
     const data = input(credentials.extend({name:z.string().trim().min(2).max(80)}), body);
     if (await this.db.user.findUnique({where:{email:data.email}})) throw new ConflictException('This email is already registered');
-    const user = await this.db.user.create({data:{...data,password:undefined,passwordHash:await hash(data.password,12)} as never,select:{id:true,email:true,name:true,role:true}});
+    const user = await this.db.user.create({data:{name:data.name,email:data.email,passwordHash:await hash(data.password,12)},select:{id:true,email:true,name:true,role:true}});
     return this.session(user,res);
   }
   @Public() @Post('login')
