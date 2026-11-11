@@ -18,6 +18,21 @@ test('discount allocation preserves every minor unit', () => {
     101,
   );
 });
+test('discount allocations cannot overdraw a small final line and preserve large integer totals', () => {
+  const parts = allocate(
+    999,
+    Array.from({ length: 1000 }, () => 1),
+  );
+  assert.equal(
+    parts.reduce((a, b) => a + b, 0),
+    999,
+  );
+  assert.ok(parts.every((p) => p <= 1));
+  assert.equal(
+    allocate(2000000000, [1000000000, 999999999, 1]).reduce((a, b) => a + b, 0),
+    2000000000,
+  );
+});
 test('coupons respect minimum spend and discount cap', () => {
   const c = { percent: 10, maxDiscountMinor: 100000, minGoodsMinor: 100000 };
   assert.equal(couponDiscount(99999, c), 0);

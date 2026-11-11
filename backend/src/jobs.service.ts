@@ -65,7 +65,12 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
         take: 10,
       });
       for (const payment of pendingPayments) {
-        const adapter = this.providers.get(payment.provider);
+        let adapter;
+        try {
+          adapter = this.providers.get(payment.provider);
+        } catch {
+          continue;
+        }
         if (adapter.reconciliationBody) {
           try {
             await new WebhookController(this.db, this.providers).receive(payment.provider, {}, {
@@ -121,7 +126,8 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
       for (const event of events) {
         try {
           const p = event.payload as Record<string, string>;
-          if (event.type === 'REFUND_REQUESTED') await this.refunds.process(p.refundId);
+          if (event.type === 'CACHE_INVALIDATION') await this.cache.purge();
+          else if (event.type === 'REFUND_REQUESTED') await this.refunds.process(p.refundId);
           else if (p.userId) {
             const title = event.type.toLowerCase().replaceAll('_', ' ');
             await this.db.notification.upsert({
@@ -164,7 +170,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
           });
         }
       }
-      if (events.length || expired.length) await this.cache.invalidate();
+      if (events.length || expired.length) await this.cache.invalidate(false);
     } catch (e) {
       this.logger.error(e instanceof Error ? e.message : e);
     } finally {

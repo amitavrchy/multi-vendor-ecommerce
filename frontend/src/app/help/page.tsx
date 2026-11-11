@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { PageTitle } from '@/components/ui';
+import { PolicyNotice } from '@/components/policy-notice';
 export const metadata = { title: 'Help, delivery & returns' };
 export default function Help() {
   return (
@@ -24,18 +25,18 @@ export default function Help() {
       <details>
         <summary>What payment methods can I use?</summary>
         <p>
-          Cash on delivery is available. Stripe and SSLCommerz appear when the store operator
-          configures their merchant credentials. bKash and Nagad remain unavailable until their
-          merchant integrations are completed. An unavailable method cannot be selected at checkout.
+          Cash on delivery is available. Stripe, SSLCommerz, bKash and Nagad appear when the
+          operator configures their merchant credentials. Unavailable methods cannot be selected at
+          checkout.
         </p>
       </details>
       <details>
         <summary>Can I return a find?</summary>
+        <PolicyNotice />
         <p>
-          Request a return from your orders within 14 days of delivery. The current return flow
-          covers the full shipment from one store. Our team reviews the request, approves eligible
-          returns, and confirms receipt before arranging the refund. Original shipping is not
-          refunded. Cash on delivery refunds require a manual transfer and operator confirmation.
+          Our team reviews the request and confirms receipt before arranging the refund. Cash on
+          delivery and mobile-wallet refunds require an externally completed transfer and operator
+          reconciliation.
         </p>
       </details>
       <details>

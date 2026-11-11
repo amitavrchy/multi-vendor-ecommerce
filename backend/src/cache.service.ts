@@ -1,13 +1,14 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { config } from './config';
+import { Db } from './db';
 @Injectable()
 export class CacheService implements OnModuleDestroy {
   private redis?: Redis;
   private version = 0;
   private local = new Map<string, { value: unknown; expires: number }>();
   private buckets = new Map<string, { count: number; expires: number }>();
-  constructor() {
+  constructor(private db: Db) {
     if (config.REDIS_URL) {
       this.redis = new Redis(config.REDIS_URL, {
         lazyConnect: true,
@@ -42,12 +43,36 @@ export class CacheService implements OnModuleDestroy {
     } catch {}
     return value;
   }
-  async invalidate() {
+  async purge() {
+    if (!process.env.CDN_PURGE_URL) return;
+    const r = await fetch(process.env.CDN_PURGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.CDN_PURGE_TOKEN
+          ? { Authorization: `Bearer ${process.env.CDN_PURGE_TOKEN}` }
+          : {}),
+      },
+      body: JSON.stringify({ tags: ['catalog'] }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) throw new Error('CDN tag purge failed');
+  }
+  async invalidate(purgeCdn = true) {
     this.version++;
     this.local.clear();
     try {
       if (this.redis?.status === 'ready') await this.redis.incr('bazaar:catalog-version');
     } catch {}
+    if (purgeCdn && process.env.CDN_PURGE_URL) {
+      try {
+        await this.purge();
+      } catch {
+        await this.db.outboxEvent.create({
+          data: { type: 'CACHE_INVALIDATION', payload: { tags: ['catalog'] } },
+        });
+      }
+    }
   }
   async allow(key: string, limit: number, windowMs: number) {
     try {

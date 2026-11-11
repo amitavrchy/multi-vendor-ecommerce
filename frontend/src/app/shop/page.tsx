@@ -51,7 +51,8 @@ function Shop() {
             className={!params.get('category') ? 'filter-item selected' : 'filter-item'}
             onClick={() => set('category', '')}
           >
-            All good finds <span>30</span>
+            All good finds{' '}
+            <span>{categories.data?.reduce((sum, c) => sum + c._count.products, 0) ?? '…'}</span>
           </button>
           {categories.data?.map((c) => (
             <button

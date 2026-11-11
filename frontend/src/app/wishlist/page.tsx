@@ -1,13 +1,15 @@
 'use client';
 import { useStore } from '@/components/provider';
 import { useApi } from '@/lib/api';
-import { CatalogResult } from '@/lib/types';
+import { Product } from '@/lib/types';
 import { ProductCard } from '@/components/product-card';
 import { Empty, ErrorBox, Loading, PageTitle } from '@/components/ui';
 export default function Wishlist() {
   const { wishlist } = useStore(),
-    { data, error, loading } = useApi<CatalogResult>('/products?limit=60');
-  const items = data?.items.filter((p) => wishlist.includes(p.id));
+    { data, error, loading } = useApi<Product[]>(
+      `/wishlist?ids=${encodeURIComponent(wishlist.slice(0, 200).join(','))}`,
+    );
+  const items = data?.filter((p) => wishlist.includes(p.id));
   return (
     <div className="container page">
       <PageTitle

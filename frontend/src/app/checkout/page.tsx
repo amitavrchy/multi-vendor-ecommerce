@@ -9,6 +9,7 @@ import { Gate } from '@/components/gate';
 import { AddressForm } from '@/components/address-form';
 import { Empty, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
 type Quote = {
+  couponFunding?: string | null;
   goodsMinor: number;
   discountMinor: number;
   shippingMinor: number;
@@ -268,8 +269,10 @@ function Checkout() {
             Your order is safe with us.
           </p>
           <p className="fine-print">
-            Prices are confirmed at checkout. Shipping is ৳80 per store. Coupon discounts are funded
-            by Bazaar.
+            Prices are confirmed at checkout. Shipping is ৳80 per store.{' '}
+            {applied
+              ? `This discount is funded by ${quote?.couponFunding === 'VENDOR' ? 'participating stores' : 'Bazaar'}.`
+              : ''}
           </p>
         </aside>
       </form>

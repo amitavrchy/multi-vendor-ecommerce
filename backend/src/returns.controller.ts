@@ -13,7 +13,7 @@ import { Db } from './db';
 import { Actor, Principal, Roles } from './auth/access';
 import { input } from './common/input';
 import { RefundsService } from './refunds.service';
-import { commission } from './common/money';
+import { commission, allocate } from './common/money';
 @Controller('returns')
 export class ReturnsController {
   constructor(
@@ -52,6 +52,22 @@ export class ReturnsController {
       if (new Set(requested.map((l) => l.lineId)).size !== requested.length)
         throw new BadRequestException('Duplicate return lines');
       let goodsMinor = 0;
+      const units = vo.lines
+        .slice()
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .flatMap((l) =>
+          Array.from({ length: l.qty }, () => ({ lineId: l.id, price: l.unitPriceMinor })),
+        );
+      const discounts = allocate(
+          vo.discountMinor,
+          units.map((u) => u.price),
+        ),
+        nets = allocate(
+          vo.vendorNetMinor,
+          units.map((u) => u.price),
+        );
+      const snapshots: { lineId: string; qty: number; discountMinor: number; netMinor: number }[] =
+        [];
       for (const line of requested) {
         const original = vo.lines.find((l) => l.id === line.lineId);
         if (!original) throw new BadRequestException('Unknown order line');
@@ -63,17 +79,26 @@ export class ReturnsController {
         if (line.qty + reserved > original.qty)
           throw new BadRequestException('Return quantity exceeds remaining purchased quantity');
         goodsMinor += line.qty * original.unitPriceMinor;
+        const indexes = units
+          .map((u, i) => (u.lineId === line.lineId ? i : -1))
+          .filter((i) => i >= 0)
+          .slice(reserved, reserved + line.qty);
+        snapshots.push({
+          ...line,
+          discountMinor: indexes.reduce((s, i) => s + discounts[i], 0),
+          netMinor: indexes.reduce((s, i) => s + nets[i], 0),
+        });
       }
       const restockingFeeMinor = commission(goodsMinor, policy?.restockingBps ?? 0);
       const clawbackMinor = Math.max(
         0,
-        Math.floor((vo.vendorNetMinor * goodsMinor) / vo.goodsMinor) - restockingFeeMinor,
+        snapshots.reduce((s, l) => s + l.netMinor, 0) - restockingFeeMinor,
       );
       return tx.returnRequest.create({
         data: {
           vendorOrderId: d.vendorOrderId,
           reason: d.reason,
-          lines: requested,
+          lines: snapshots,
           restockingFeeMinor,
           clawbackMinor,
         },
@@ -118,10 +143,11 @@ export class ReturnsController {
           (s, l) => s + l.qty * vo.lines.find((v) => v.id === l.lineId)!.unitPriceMinor,
           0,
         );
-        const amountMinor =
-          returnedGoods -
-          Math.floor((vo.discountMinor * returnedGoods) / vo.goodsMinor) -
-          r.restockingFeeMinor;
+        const snapshotDiscounts = r.lines as { discountMinor?: number }[];
+        const discountMinor = snapshotDiscounts.every((l) => l.discountMinor !== undefined)
+          ? snapshotDiscounts.reduce((s, l) => s + l.discountMinor!, 0)
+          : Math.floor((vo.discountMinor * returnedGoods) / vo.goodsMinor);
+        const amountMinor = returnedGoods - discountMinor - r.restockingFeeMinor;
         if (amountMinor <= 0) throw new BadRequestException('This return has no refundable amount');
         if (!['SUCCEEDED', 'COD_PENDING'].includes(payment.status))
           throw new BadRequestException('Payment is not refundable');

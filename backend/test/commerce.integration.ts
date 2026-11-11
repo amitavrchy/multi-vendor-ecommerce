@@ -20,6 +20,10 @@ import { CatalogController } from '../src/catalog.controller';
 import { Principal } from '../src/auth/access';
 import { encrypt } from '../src/common/security';
 import { config } from '../src/config';
+import { DisputesController } from '../src/disputes.controller';
+import { DeliveryService } from '../src/delivery.service';
+import nodemailer from 'nodemailer';
+import { JobsService } from '../src/jobs.service';
 const url = new URL(process.env.DATABASE_URL!);
 url.pathname = '/bazaar_test';
 const db = new Db({ datasourceUrl: url.toString() });
@@ -305,4 +309,245 @@ test('one new provider class and registry entry are sufficient for checkout', as
     randomUUID(),
   );
   assert.equal(r.status, 'REQUIRES_ACTION');
+});
+
+test('partial returns respect quantities and retain the configured restocking fee', async () => {
+  const previous = await db.platformPolicy.findUnique({ where: { id: 'marketplace' } });
+  await db.platformPolicy.upsert({
+    where: { id: 'marketplace' },
+    create: { restockingBps: 1000 },
+    update: { restockingBps: 1000 },
+  });
+  try {
+    const f = await fixture();
+    const variant = f.vendors[0].products[0].variants[0];
+    await db.cartItem.updateMany({
+      where: { cartId: f.cart.id, variantId: variant.id },
+      data: { qty: 2 },
+    });
+    const r = await checkout.start(
+      f.user,
+      { addressId: f.address.id, provider: 'FAKE' },
+      randomUUID(),
+    );
+    await pay(r.orderId);
+    const vo = await db.vendorOrder.findFirstOrThrow({
+        where: { orderId: r.orderId, vendorId: f.vendors[0].id },
+        include: { lines: true },
+      }),
+      admin = { ...f.user, role: 'PLATFORM_ADMIN' };
+    await orders.transition(admin, vo.id, 'PROCESSING');
+    await orders.transition(admin, vo.id, 'SHIPPED', 'PARTIAL-TRACK');
+    await orders.transition(admin, vo.id, 'DELIVERED');
+    for (let i = 0; i < 2; i++) {
+      const rma = await returns.request(f.user, {
+        vendorOrderId: vo.id,
+        reason: 'One item needs to be returned for inspection',
+        lines: [{ lineId: vo.lines[0].id, qty: 1 }],
+      });
+      assert.equal(rma.restockingFeeMinor, 1000);
+      await returns.review(rma.id, { status: 'APPROVED' });
+      await returns.review(rma.id, { status: 'ITEM_RECEIVED' });
+      const refund = await db.refund.findUniqueOrThrow({ where: { returnRequestId: rma.id } });
+      assert.equal(refund.amountMinor, 9000);
+      await refunds.process(refund.id);
+    }
+    await assert.rejects(() =>
+      returns.request(f.user, {
+        vendorOrderId: vo.id,
+        reason: 'Attempting to return a third item',
+        lines: [{ lineId: vo.lines[0].id, qty: 1 }],
+      }),
+    );
+    assert.equal(
+      (await db.vendorBalance.findUniqueOrThrow({ where: { vendorId: vo.vendorId } }))
+        .availableMinor,
+      2000,
+    );
+    const batch = await payouts.run();
+    const item = await db.payoutItem.findUniqueOrThrow({ where: { vendorOrderId: vo.id } });
+    assert.equal(item.amountMinor, 2000);
+    assert.equal(item.batchId, batch.id);
+    await payouts.confirm(batch.id, { transferReference: 'PARTIAL-RESTOCK-PAYOUT' });
+  } finally {
+    if (previous)
+      await db.platformPolicy.update({
+        where: { id: 'marketplace' },
+        data: { restockingBps: previous.restockingBps },
+      });
+    else await db.platformPolicy.delete({ where: { id: 'marketplace' } });
+  }
+});
+test('a late successful payment queues a refund without reviving a cancelled order', async () => {
+  const f = await fixture(),
+    r = await checkout.start(f.user, { addressId: f.address.id, provider: 'FAKE' }, randomUUID());
+  await checkout.cancelPending(r.orderId);
+  await pay(r.orderId);
+  const payment = await db.payment.findUniqueOrThrow({ where: { orderId: r.orderId } });
+  const refund = await db.refund.findUniqueOrThrow({
+    where: { idempotencyKey: `late:${payment.id}` },
+  });
+  await refunds.process(refund.id);
+  assert.equal(
+    (await db.order.findUniqueOrThrow({ where: { id: r.orderId } })).status,
+    'CANCELLED',
+  );
+  assert.equal(
+    (await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).refundedMinor,
+    payment.amountMinor,
+  );
+});
+test('dispute threads are scoped to the buyer, assigned store and support staff', async () => {
+  const f = await fixture(),
+    other = await fixture(),
+    r = await checkout.start(f.user, { addressId: f.address.id, provider: 'COD' }, randomUUID());
+  const vo = await db.vendorOrder.findFirstOrThrow({ where: { orderId: r.orderId } });
+  const cases = new DisputesController(db);
+  const dispute = await cases.open(f.user, {
+    vendorOrderId: vo.id,
+    subject: 'Delivery question',
+    body: 'Could you confirm when this shipment will leave the store?',
+  });
+  assert.equal(
+    (await cases.list(other.user)).some((c) => c.id === dispute.id),
+    false,
+  );
+  await assert.rejects(() => cases.reply(other.user, dispute.id, { body: 'Unauthorized message' }));
+  await cases.reply(f.owner, dispute.id, { body: 'We will prepare it today.' });
+  await cases.resolve(dispute.id, {
+    status: 'RESOLVED',
+    resolution: 'Delivery date confirmed with buyer',
+  });
+  await assert.rejects(() => cases.reply(f.user, dispute.id, { body: 'Closed case' }));
+});
+test('email delivery receipts deduplicate retries and preserve failed attempts', async () => {
+  const oldUrl = process.env.SMTP_URL,
+    oldCreate = nodemailer.createTransport,
+    oldSms = process.env.SMS_URL;
+  process.env.SMTP_URL = 'smtp://contract.test';
+  delete process.env.SMS_URL;
+  let sent = 0,
+    fail = true;
+  nodemailer.createTransport = (() => ({
+    sendMail: async () => {
+      sent++;
+      if (fail) throw new Error('Temporary SMTP failure');
+      return { messageId: 'mail-contract' };
+    },
+  })) as typeof nodemailer.createTransport;
+  try {
+    const event = await db.outboxEvent.create({ data: { type: 'EMAIL_CONTRACT', payload: {} } }),
+      delivery = new DeliveryService(db);
+    const message = { email: 'nobody@example.test', subject: 'Test', text: 'Contract test only' };
+    await assert.rejects(() => delivery.deliver(event.id, message));
+    fail = false;
+    await delivery.deliver(event.id, message);
+    await delivery.deliver(event.id, message);
+    assert.equal(sent, 2);
+    const receipt = await db.deliveryReceipt.findUniqueOrThrow({
+      where: { eventId_channel: { eventId: event.id, channel: 'EMAIL' } },
+    });
+    assert.equal(receipt.status, 'SENT');
+    assert.equal(receipt.attempts, 2);
+  } finally {
+    nodemailer.createTransport = oldCreate;
+    if (oldUrl === undefined) delete process.env.SMTP_URL;
+    else process.env.SMTP_URL = oldUrl;
+    if (oldSms !== undefined) process.env.SMS_URL = oldSms;
+  }
+});
+test('vendor-funded coupons and category commission overrides snapshot the correct earnings', async () => {
+  const f = await fixture(),
+    code = `VENDOR_${randomUUID().slice(0, 8)}`.toUpperCase();
+  const product = f.vendors[0].products[0];
+  const categoryId = `commission-${randomUUID()}`;
+  await db.category.create({
+    data: { id: categoryId, name: 'Commission fixture', icon: 'Box', commissionBps: 500 },
+  });
+  await db.product.update({ where: { id: product.id }, data: { categoryId } });
+  await db.coupon.create({
+    data: {
+      code,
+      percent: 10,
+      maxDiscountMinor: 100000,
+      minGoodsMinor: 0,
+      funding: 'VENDOR',
+      expiresAt: new Date(Date.now() + 86400000),
+    },
+  });
+  const r = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', couponCode: code },
+    randomUUID(),
+  );
+  const vo = await db.vendorOrder.findFirstOrThrow({
+    where: { orderId: r.orderId, vendorId: f.vendors[0].id },
+    include: { lines: true },
+  });
+  assert.equal(vo.commissionMinor, 500);
+  assert.equal(vo.vendorFundedDiscountMinor, 1000);
+  assert.equal(vo.vendorNetMinor, 8500);
+  assert.equal(vo.lines[0].commissionBps, 500);
+});
+test('maintenance expires reservations, queues delayed review requests and prepares a weekly batch once', async () => {
+  const previous = await db.platformPolicy.findUnique({ where: { id: 'marketplace' } }),
+    today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date()),
+    weekday = new Date(`${today}T12:00:00+06:00`).getUTCDay();
+  await db.platformPolicy.upsert({
+    where: { id: 'marketplace' },
+    create: { weeklyPayouts: true, payoutWeekday: weekday, reviewDelayDays: 1 },
+    update: { weeklyPayouts: true, payoutWeekday: weekday, reviewDelayDays: 1 },
+  });
+  try {
+    const pending = await fixture(),
+      r = await checkout.start(
+        pending.user,
+        { addressId: pending.address.id, provider: 'FAKE' },
+        randomUUID(),
+      );
+    await db.stockReservation.updateMany({
+      where: { orderId: r.orderId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const f = await fixture(),
+      delivered = await checkout.start(
+        f.user,
+        { addressId: f.address.id, provider: 'COD' },
+        randomUUID(),
+      ),
+      vo = await db.vendorOrder.findFirstOrThrow({ where: { orderId: delivered.orderId } }),
+      admin = { ...f.user, role: 'PLATFORM_ADMIN' };
+    await orders.transition(admin, vo.id, 'PROCESSING');
+    await orders.transition(admin, vo.id, 'SHIPPED', 'REVIEW-TRACK');
+    await orders.transition(admin, vo.id, 'DELIVERED');
+    await db.vendorOrder.update({
+      where: { id: vo.id },
+      data: { deliveredAt: new Date(Date.now() - 3 * 86400000) },
+    });
+    const jobs = new JobsService(
+      db,
+      checkout,
+      refunds,
+      { notify: () => {} } as never,
+      { deliver: async () => {} } as never,
+      { invalidate: async () => {}, purge: async () => {} } as never,
+      registry,
+    );
+    await jobs.tick();
+    await jobs.tick();
+    assert.equal(
+      (await db.order.findUniqueOrThrow({ where: { id: r.orderId } })).status,
+      'CANCELLED',
+    );
+    assert.equal(await db.outboxEvent.count({ where: { id: `review:${vo.id}` } }), 1);
+    assert.equal(await db.payoutBatch.count({ where: { scheduleKey: `weekly:${today}` } }), 1);
+  } finally {
+    if (previous) await db.platformPolicy.update({ where: { id: 'marketplace' }, data: previous });
+    else await db.platformPolicy.delete({ where: { id: 'marketplace' } });
+  }
 });

@@ -76,6 +76,7 @@ export class CartController {
     const shippingMinor = vendors.size * SHIPPING_MINOR;
     return {
       goodsMinor,
+      couponFunding: coupon?.funding ?? null,
       discountMinor,
       shippingMinor,
       grandMinor: goodsMinor - discountMinor + shippingMinor,

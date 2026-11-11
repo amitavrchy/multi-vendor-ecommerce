@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 const password = process.env.E2E_PASSWORD || 'BazaarDemo2026!';
 test('storefront search, saved items and responsive typography', async ({ page }) => {
   await page.goto('/');
@@ -197,4 +198,182 @@ test('a new seller submits KYC and publishes a moderated product', async ({ page
     page.getByRole('heading', { name: `Thoughtful browser find ${suffix}`, exact: true }),
   ).toBeVisible();
   await expect(page.getByText('In stock · 8 available')).toBeVisible();
+});
+
+test('private KYC files stay private while product uploads and variants are published', async ({
+  request,
+  page,
+}) => {
+  expect(
+    (await request.post('/api/auth/login', { data: { email: 'owner@form.test', password } })).ok(),
+  ).toBeTruthy();
+  const upload = await request.post('/api/uploads?scope=KYC', {
+    multipart: {
+      file: {
+        name: 'verification.pdf',
+        mimeType: 'application/pdf',
+        buffer: Buffer.from('%PDF-1.4\nTest verification document\n%%EOF'),
+      },
+    },
+  });
+  expect(upload.ok()).toBeTruthy();
+  const document = await upload.json();
+  expect((await request.get(document.url)).status()).toBe(200);
+  expect((await page.request.get(document.url)).status()).toBe(403);
+  const imageUpload = await request.post('/api/uploads?scope=PRODUCT', {
+    multipart: {
+      file: {
+        name: 'product.jpg',
+        mimeType: 'image/jpeg',
+        buffer: readFileSync('frontend/public/products/01.jpg'),
+      },
+    },
+  });
+  expect(imageUpload.ok()).toBeTruthy();
+  const image = await imageUpload.json();
+  expect((await page.request.get(image.url)).status()).toBe(200);
+  const suffix = Date.now();
+  const created = await request.post('/api/vendor/products', {
+    data: {
+      title: `Variant find ${suffix}`,
+      slug: `variant-find-${suffix}`,
+      description: 'A thoughtful find with multiple considered finishes.',
+      categoryId: 'home-living',
+      image: image.url,
+      priceMinor: 125000,
+      stockQty: 5,
+      sku: `BASE-${suffix}`,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const product = await created.json();
+  const variantResponse = await request.post(`/api/vendor/products/${product.id}/variants`, {
+    data: {
+      sku: `BLUE-${suffix}`,
+      priceMinor: 150000,
+      stockQty: 3,
+      attrs: { Color: 'Blue', Size: 'Medium' },
+    },
+  });
+  expect(variantResponse.ok()).toBeTruthy();
+  expect(
+    (
+      await request.patch('/api/vendor/products/variant-2/inventory', { data: { stockQty: 50 } })
+    ).status(),
+  ).toBe(404);
+  await request.post('/api/auth/login', { data: { email: 'admin@bazaar.test', password } });
+  expect((await request.get(document.url)).status()).toBe(200);
+  expect(
+    (await request.patch(`/api/admin/products/${product.id}`, { data: { status: 'ACTIVE' } })).ok(),
+  ).toBeTruthy();
+  await page.goto(`/product/variant-find-${suffix}`);
+  await page.getByLabel('Choose a variant').selectOption({ label: 'Blue / Medium' });
+  await expect(page.locator('.detail-price')).toContainText('1,500');
+  await expect(page.getByText('In stock · 3 available')).toBeVisible();
+});
+test('customer and support resolve an order case through the conversation workspace', async ({
+  page,
+  request,
+}) => {
+  const suffix = Date.now();
+  expect(
+    (
+      await page.request.post('/api/auth/register', {
+        data: { name: 'Support Customer', email: `support-case-${suffix}@bazaar.test`, password },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  const address = await (
+    await page.request.post('/api/profile/addresses', {
+      data: {
+        label: 'Home',
+        name: 'Support Customer',
+        phone: '+8801700000000',
+        line1: 'House 12, Test Road',
+        city: 'Dhaka',
+        postalCode: '1209',
+      },
+    })
+  ).json();
+  expect(
+    (await page.request.post('/api/cart/items', { data: { variantId: 'variant-1', qty: 1 } })).ok(),
+  ).toBeTruthy();
+  expect(
+    (
+      await page.request.post('/api/checkout/session', {
+        headers: { 'Idempotency-Key': `browser-support-${suffix}` },
+        data: { addressId: address.id, provider: 'COD' },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await page.goto('/orders');
+  await page.getByRole('link', { name: 'Get help', exact: true }).first().click();
+  await page.getByLabel('Subject', { exact: true }).fill('Question about delivery');
+  await page
+    .getByLabel('How can we help?')
+    .fill('Could you confirm the expected delivery day for this order?');
+  await page.getByRole('button', { name: 'Open support case' }).click();
+  await expect(page.locator('.message')).toHaveCount(1);
+  await page.getByLabel('Your reply').fill('Please deliver after 10 am.');
+  await page.getByRole('button', { name: 'Send reply' }).click();
+  await expect(page.locator('.message')).toHaveCount(2);
+  const cases = await (await page.request.get('/api/disputes')).json();
+  await request.post('/api/auth/login', { data: { email: 'support@bazaar.test', password } });
+  expect(
+    (
+      await request.post(`/api/disputes/${cases[0].id}/messages`, {
+        data: { body: 'Your delivery preference has been noted.' },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  expect(
+    (
+      await request.patch(`/api/disputes/${cases[0].id}`, {
+        data: { status: 'RESOLVED', resolution: 'Delivery preference confirmed with the store.' },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await page.reload();
+  await expect(page.locator('.resolution')).toContainText('Delivery preference confirmed');
+  await expect(page.getByRole('button', { name: 'Send reply' })).toHaveCount(0);
+});
+test('administrator configures a vendor-funded promotion from marketplace settings', async ({
+  page,
+}) => {
+  await page.goto('/login');
+  await page.getByLabel('Email address').fill('admin@bazaar.test');
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/admin/settings');
+  await expect(page.getByRole('heading', { name: 'Marketplace settings.' })).toBeVisible();
+  const code = `TEST${Date.now()}`;
+  await page.getByLabel('Coupon code', { exact: true }).fill(code);
+  await page.getByLabel('Discount (%)', { exact: true }).fill('5');
+  await page.getByLabel('Maximum discount (৳)').fill('50');
+  await page.getByLabel('Who funds the discount?').selectOption('VENDOR');
+  await page.getByLabel('Expires at').fill('2030-12-31T23:59');
+  await page.getByRole('button', { name: 'Save coupon' }).click();
+  await expect(page.getByText(`${code} · 5%`, { exact: true })).toBeVisible();
+});
+test('store staff access is scoped and revoked immediately when an owner removes the member', async ({
+  page,
+  request,
+}) => {
+  const email = `staff-${Date.now()}@bazaar.test`;
+  const registered = await page.request.post('/api/auth/register', {
+    data: { name: 'Store Colleague', email, password },
+  });
+  expect(registered.ok()).toBeTruthy();
+  const member = await registered.json();
+  expect(
+    (await request.post('/api/auth/login', { data: { email: 'owner@form.test', password } })).ok(),
+  ).toBeTruthy();
+  expect((await request.post('/api/vendor/team', { data: { email } })).ok()).toBeTruthy();
+  expect((await page.request.get('/api/vendor/orders')).status()).toBe(200);
+  expect(
+    (await page.request.post('/api/vendor/products', { data: { title: 'Not allowed' } })).status(),
+  ).toBe(403);
+  expect((await request.delete(`/api/vendor/team/${member.id}`)).ok()).toBeTruthy();
+  expect((await page.request.get('/api/vendor/orders')).status()).toBe(403);
 });

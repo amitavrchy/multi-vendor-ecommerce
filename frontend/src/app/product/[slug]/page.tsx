@@ -62,7 +62,10 @@ export default function Detail({ params }: { params: Promise<{ slug: string }> }
               >
                 {p.variants.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {Object.values(x.attrs).join(' / ')}
+                    {Object.entries(x.attrs)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([, value]) => value)
+                      .join(' / ') || x.sku}
                   </option>
                 ))}
               </select>

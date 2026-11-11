@@ -1,4 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Delete,
+  Param,
+} from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
 import { Actor, Principal, Roles } from './auth/access';
@@ -121,6 +130,27 @@ export class VendorController {
     return this.db.atomic(async (tx) => {
       await tx.user.update({ where: { id: member.id }, data: { role: 'VENDOR_STAFF' } });
       return tx.vendorMember.create({ data: { vendorId: v.id, userId: member.id } });
+    });
+  }
+  @Roles('VENDOR_OWNER') @Get('team') async members(@Actor() u: Principal) {
+    const v = await this.scope.get(u, true);
+    const members = await this.db.vendorMember.findMany({ where: { vendorId: v.id } });
+    return this.db.user.findMany({
+      where: { id: { in: members.map((m) => m.userId) } },
+      select: { id: true, name: true, email: true, role: true },
+    });
+  }
+  @Roles('VENDOR_OWNER') @Delete('team/:id') async removeMember(
+    @Actor() u: Principal,
+    @Param('id') id: string,
+  ) {
+    const v = await this.scope.get(u, true);
+    return this.db.atomic(async (tx) => {
+      const membership = await tx.vendorMember.findFirst({ where: { userId: id, vendorId: v.id } });
+      if (!membership) throw new BadRequestException('Team member not found');
+      await tx.vendorMember.delete({ where: { id: membership.id } });
+      await tx.user.update({ where: { id }, data: { role: 'CUSTOMER' } });
+      return { ok: true };
     });
   }
   @Roles('VENDOR_OWNER', 'VENDOR_STAFF') @Get('stats') async stats(@Actor() u: Principal) {

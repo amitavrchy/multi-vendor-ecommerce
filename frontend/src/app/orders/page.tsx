@@ -7,6 +7,17 @@ import { Order, VendorOrder, money, pretty } from '@/lib/types';
 import { Gate } from '@/components/gate';
 import { useStore } from '@/components/provider';
 import { Action, Badge, Empty, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
+function remainingQuantity(vo: VendorOrder, id: string, qty: number) {
+  return Math.max(
+    0,
+    qty -
+      vo.returns
+        .filter((r) => r.status !== 'REJECTED')
+        .flatMap((r) => r.lines || [])
+        .filter((l) => l.lineId === id)
+        .reduce((s, l) => s + l.qty, 0),
+  );
+}
 function Orders() {
   const result = useApi<Order[]>('/orders'),
     { toast } = useStore(),
@@ -279,8 +290,8 @@ function Orders() {
                     type="number"
                     name={`qty-${line.id}`}
                     min={0}
-                    max={line.qty}
-                    defaultValue={line.qty}
+                    max={remainingQuantity(modal.vo, line.id, line.qty)}
+                    defaultValue={remainingQuantity(modal.vo, line.id, line.qty)}
                   />
                 </label>
               ))}

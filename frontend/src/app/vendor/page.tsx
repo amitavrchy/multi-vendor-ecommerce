@@ -51,6 +51,9 @@ function VendorDashboard() {
     products = useApi<Product[]>('/vendor/products'),
     orders = useApi<VendorOrder[]>('/vendor/orders'),
     categories = useApi<Category[]>('/categories'),
+    members = useApi<{ id: string; name: string; email: string }[]>(
+      user?.role === 'VENDOR_OWNER' ? '/vendor/team' : null,
+    ),
     [tab, setTab] = useState('overview'),
     [modal, setModal] = useState<'product' | Product | null>(null),
     [variantProduct, setVariantProduct] = useState<Product | null>(null),
@@ -59,7 +62,13 @@ function VendorDashboard() {
     [busy, setBusy] = useState(false),
     [tracking, setTracking] = useState<Record<string, string>>({});
   const reload = async () => {
-    await Promise.all([vendor.refresh(), stats.refresh(), products.refresh(), orders.refresh()]);
+    await Promise.all([
+      vendor.refresh(),
+      stats.refresh(),
+      products.refresh(),
+      orders.refresh(),
+      members.refresh(),
+    ]);
   };
   useEffect(() => {
     const update = () => void orders.refresh();
@@ -580,6 +589,20 @@ function VendorDashboard() {
                   Add team member
                 </button>
               </form>
+              {members.data?.map((member) => (
+                <article className="category-rate" key={member.id}>
+                  <div>
+                    <strong>{member.name}</strong>
+                    <p>{member.email}</p>
+                  </div>
+                  <Action
+                    className="button secondary"
+                    onClick={() => perform(`/vendor/team/${member.id}`, {}, 'DELETE')}
+                  >
+                    Remove access
+                  </Action>
+                </article>
+              ))}
             </section>
           )}
         </div>
@@ -621,7 +644,13 @@ function VendorDashboard() {
                 sku: f.sku,
                 priceMinor: Math.round(Number(f.price) * 100),
                 stockQty: Number(f.stockQty),
-                attrs: JSON.parse(String(f.attrs)),
+                attrs: Object.fromEntries(
+                  [
+                    ['Color', f.color],
+                    ['Size', f.size],
+                    ['Material', f.material],
+                  ].filter(([, value]) => !!value),
+                ),
               }))
             }
           >
@@ -639,14 +668,19 @@ function VendorDashboard() {
                 <input name="stockQty" type="number" min="0" max="100000" required />
               </label>
             </div>
+            <div className="form-row">
+              <label>
+                Color
+                <input name="color" maxLength={100} />
+              </label>
+              <label>
+                Size
+                <input name="size" maxLength={100} />
+              </label>
+            </div>
             <label>
-              Attributes (JSON)
-              <textarea
-                name="attrs"
-                rows={3}
-                defaultValue={'{"Color":"Original","Size":"Standard"}'}
-                required
-              />
+              Material
+              <input name="material" maxLength={100} />
             </label>
             {error && <p className="form-error">{error}</p>}
             <button className="button" disabled={busy}>

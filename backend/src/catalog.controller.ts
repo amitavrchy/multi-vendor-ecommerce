@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Query, Optional } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, Optional, Header } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { Db } from './db';
@@ -33,6 +33,16 @@ export class CatalogController {
   @Get('search') search(@Query() query: unknown) {
     return this.products(query);
   }
+  @Get('wishlist') wishlist(@Query('ids') ids: string) {
+    const list = input(
+      z.array(z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)).max(200),
+      (ids || '').split(',').filter(Boolean),
+    );
+    return this.db.product.findMany({
+      where: { id: { in: list }, status: 'ACTIVE', vendor: { status: 'ACTIVE' } },
+      include: productInclude,
+    });
+  }
   @Get('products') async products(@Query() query: unknown) {
     const q = input(
       z.object({
@@ -58,14 +68,26 @@ export class CatalogController {
     const items = result.ids.map((id) => rows.find((p) => p.id === id)!);
     return { items, total: result.total, page: q.page, pages: Math.ceil(result.total / q.limit) };
   }
-  @Get('products/:slug') async detail(@Param('slug') slug: string) {
-    const p = await this.db.product.findFirst({
+  @Header('Surrogate-Key', 'catalog')
+  @Get('products/:slug')
+  async detail(@Param('slug') slug: string) {
+    const active = await this.db.product.findFirst({
       where: { slug, status: 'ACTIVE', vendor: { status: 'ACTIVE' } },
-      include: {
-        ...productInclude,
-        reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' } },
-      },
+      select: { id: true },
     });
+    if (!active) throw new NotFoundException('Product not found');
+    const load = () =>
+      this.db.product.findFirst({
+        where: { slug, status: 'ACTIVE', vendor: { status: 'ACTIVE' } },
+        include: {
+          ...productInclude,
+          reviews: {
+            include: { user: { select: { name: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+    const p = this.cache ? await this.cache.remember(`product:${slug}`, 60, load) : await load();
     if (!p) throw new NotFoundException('Product not found');
     return p;
   }
