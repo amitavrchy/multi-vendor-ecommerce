@@ -26,8 +26,39 @@ import { PayoutsController } from './payouts.controller';
 import { JobsService } from './jobs.service';
 import { RealtimeGateway } from './realtime.gateway';
 @Module({
-  imports:[JwtModule.register({global:true,secret:config.JWT_SECRET,signOptions:{expiresIn:'7d'}})],
-  controllers:[AuthController,CatalogController,CartController,ProfileController,CheckoutController,WebhookController,VendorController,VendorCatalogController,OrdersController,ReturnsController,CancellationController,ReviewsController,AdminController,PayoutsController],
-  providers:[Db,ProviderRegistry,CheckoutService,VendorScope,OrdersService,RefundsService,JobsService,RealtimeGateway,{provide:APP_GUARD,useClass:AccessGuard}],
+  imports: [
+    JwtModule.register({
+      global: true,
+      secret: config.JWT_SECRET,
+      signOptions: { expiresIn: '7d' },
+    }),
+  ],
+  controllers: [
+    AuthController,
+    CatalogController,
+    CartController,
+    ProfileController,
+    CheckoutController,
+    WebhookController,
+    VendorController,
+    VendorCatalogController,
+    OrdersController,
+    ReturnsController,
+    CancellationController,
+    ReviewsController,
+    AdminController,
+    PayoutsController,
+  ],
+  providers: [
+    Db,
+    ProviderRegistry,
+    CheckoutService,
+    VendorScope,
+    OrdersService,
+    RefundsService,
+    JobsService,
+    RealtimeGateway,
+    { provide: APP_GUARD, useClass: AccessGuard },
+  ],
 })
 export class AppModule {}

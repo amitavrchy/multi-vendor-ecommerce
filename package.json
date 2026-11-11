@@ -1,6 +1,10 @@
 {
-  "name": "bazaar-marketplace", "private": true,
-  "workspaces": ["frontend", "backend"],
+  "name": "bazaar-marketplace",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build -w backend && npm run build -w frontend",
@@ -9,7 +13,18 @@
     "db:generate": "npm run db:generate -w backend",
     "db:push": "npm run db:push -w backend",
     "db:seed": "npm run db:seed -w backend",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:integration": "npm run test:integration -w backend"
   },
-  "devDependencies": {"concurrently": "^9.2.1", "@playwright/test": "^1.56.1"}
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "effect": "^3.22.4",
+      "deepmerge-ts": "^8.0.2"
+    }
+  }
 }
