@@ -22,9 +22,9 @@ export class SslCommerzProvider implements PaymentProvider {
       total_amount: (i.amountMinor / 100).toFixed(2),
       currency: i.currency,
       tran_id: i.orderId,
-      success_url: `${url}/orders`,
-      fail_url: `${url}/orders`,
-      cancel_url: `${url}/orders`,
+      success_url: `${url}/api/payments/return`,
+      fail_url: `${url}/api/payments/return`,
+      cancel_url: `${url}/api/payments/return`,
       ipn_url: `${url}/api/payments/webhooks/SSLCOMMERZ`,
       cus_name: 'Bazaar customer',
       cus_email: i.email,
@@ -64,7 +64,7 @@ export class SslCommerzProvider implements PaymentProvider {
       !['VALID', 'VALIDATED'].includes(d.status) ||
       d.tran_id !== b.tran_id ||
       d.currency !== 'BDT' ||
-      d.store_id !== process.env.SSLCOMMERZ_STORE_ID
+      (d.store_id && d.store_id !== process.env.SSLCOMMERZ_STORE_ID)
     )
       throw new BadRequestException('Gateway validation failed');
     return {

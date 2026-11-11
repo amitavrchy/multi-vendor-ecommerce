@@ -76,6 +76,9 @@ function AdminDashboard() {
     returns = useApi<Rma[]>('/admin/returns'),
     refunds = useApi<Refund[]>('/admin/refunds'),
     payouts = useApi<Batch[]>(user?.role === 'PLATFORM_ADMIN' ? '/payouts' : null),
+    payoutAccounts = useApi<{ storeName: string; amountMinor: number; bankDetails: string }[]>(
+      modal?.kind === 'payout' ? `/payouts/${modal.id}/instructions` : null,
+    ),
     events =
       useApi<
         { id: string; type: string; attempts: number; lastError?: string; payload: unknown }[]
@@ -632,6 +635,24 @@ function AdminDashboard() {
             }}
           >
             <p className="muted">Only confirm after the actual external transfer has completed.</p>
+            {modal.kind === 'payout' && (
+              <>
+                {payoutAccounts.loading ? (
+                  <Loading />
+                ) : payoutAccounts.error ? (
+                  <ErrorBox message={payoutAccounts.error} />
+                ) : (
+                  payoutAccounts.data?.map((account, i) => (
+                    <section className="audit-event" key={i}>
+                      <strong>
+                        {account.storeName} · {money(account.amountMinor)}
+                      </strong>
+                      <pre>{account.bankDetails}</pre>
+                    </section>
+                  ))
+                )}
+              </>
+            )}
             <label>
               Bank / mobile transfer reference
               <input name="transferReference" minLength={5} maxLength={150} required />

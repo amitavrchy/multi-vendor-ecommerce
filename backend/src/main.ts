@@ -14,16 +14,14 @@ class ApiErrors implements ExceptionFilter {
       return res.status(error.getStatus()).json({ message: error.message });
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       const status = error.code === 'P2002' ? 409 : error.code === 'P2025' ? 404 : 400;
-      return res
-        .status(status)
-        .json({
-          message:
-            status === 409
-              ? 'This record already exists'
-              : status === 404
-                ? 'Record not found'
-                : 'The request could not be saved',
-        });
+      return res.status(status).json({
+        message:
+          status === 409
+            ? 'This record already exists'
+            : status === 404
+              ? 'Record not found'
+              : 'The request could not be saved',
+      });
     }
     console.error(error);
     return res.status(500).json({ message: 'Something went wrong. Please try again.' });
@@ -39,7 +37,11 @@ async function main() {
   app.useGlobalFilters(new ApiErrors());
   const buckets = new Map<string, { count: number; expires: number }>();
   app.use((req: any, res: any, next: () => void) => {
-    if (req.method !== 'GET' && !req.path.startsWith('/api/payments/webhooks/')) {
+    if (
+      req.method !== 'GET' &&
+      !req.path.startsWith('/api/payments/webhooks/') &&
+      req.path !== '/api/payments/return'
+    ) {
       const origin = req.headers.origin;
       if (origin && !config.CORS_ORIGINS.split(',').includes(origin))
         return res.status(403).json({ message: 'Origin is not allowed' });

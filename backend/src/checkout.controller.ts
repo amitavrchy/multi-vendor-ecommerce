@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
+import { All, Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
+import { Response } from 'express';
+import { config } from './config';
 import { z } from 'zod';
 import { Actor, Principal, Public } from './auth/access';
 import { input } from './common/input';
@@ -12,6 +14,10 @@ export class CheckoutController {
   ) {}
   @Public() @Get('payments/providers') methods() {
     return this.providers.list();
+  }
+  @Public() @All('payments/return') browserReturn(@Res() res: Response) {
+    // A browser return is navigation only. The verified IPN settles payment.
+    return res.redirect(303, `${config.APP_URL}/orders`);
   }
   @Post('checkout/session') session(
     @Actor() user: Principal,

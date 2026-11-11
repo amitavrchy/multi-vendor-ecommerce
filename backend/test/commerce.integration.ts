@@ -18,6 +18,8 @@ import { ReturnsController } from '../src/returns.controller';
 import { PayoutsController } from '../src/payouts.controller';
 import { CatalogController } from '../src/catalog.controller';
 import { Principal } from '../src/auth/access';
+import { encrypt } from '../src/common/security';
+import { config } from '../src/config';
 const url = new URL(process.env.DATABASE_URL!);
 url.pathname = '/bazaar_test';
 const db = new Db({ datasourceUrl: url.toString() });
@@ -79,7 +81,7 @@ async function fixture(stock = 5) {
           storeName: `Store ${i}`,
           ownerId: owner.id,
           status: 'ACTIVE',
-          bankEncrypted: 'encrypted-test-bank',
+          bankEncrypted: encrypt('Integration bank account 123456', config.BANK_ENCRYPTION_KEY),
           balance: { create: {} },
           products: {
             create: {
@@ -258,6 +260,10 @@ test('delivered return claws back an already-paid vendor into a negative balance
     await orders.transition(admin, vo.id, 'DELIVERED');
   }
   const batch = await payouts.run();
+  const instructions = await payouts.instructions(batch.id);
+  assert.ok(
+    instructions.some((account) => account.bankDetails === 'Integration bank account 123456'),
+  );
   await payouts.confirm(batch.id, { transferReference: 'TEST-TRANSFER-1' });
   await payouts.confirm(batch.id, { transferReference: 'TEST-TRANSFER-1' });
   const vo = vos[0];

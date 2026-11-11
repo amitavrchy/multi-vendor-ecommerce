@@ -1,12 +1,39 @@
-import { BadRequestException, Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
 import { Roles } from './auth/access';
 import { input } from './common/input';
+import { decrypt } from './common/security';
+import { config } from './config';
 @Roles('PLATFORM_ADMIN')
 @Controller('payouts')
 export class PayoutsController {
   constructor(private db: Db) {}
+  @Header('Cache-Control', 'no-store')
+  @Get(':id/instructions')
+  async instructions(@Param('id') id: string) {
+    const batch = await this.db.payoutBatch.findUniqueOrThrow({
+      where: { id },
+      include: { items: { include: { vendorOrder: { include: { vendor: true } } } } },
+    });
+    const accounts = new Map<
+      string,
+      { storeName: string; amountMinor: number; bankDetails: string }
+    >();
+    for (const item of batch.items) {
+      const vendor = item.vendorOrder.vendor;
+      const account = accounts.get(vendor.id) || {
+        storeName: vendor.storeName,
+        amountMinor: 0,
+        bankDetails: vendor.bankEncrypted
+          ? decrypt(vendor.bankEncrypted, config.BANK_ENCRYPTION_KEY)
+          : 'No bank account configured',
+      };
+      account.amountMinor += item.amountMinor;
+      accounts.set(vendor.id, account);
+    }
+    return [...accounts.values()];
+  }
   @Get() list() {
     return this.db.payoutBatch.findMany({
       include: {

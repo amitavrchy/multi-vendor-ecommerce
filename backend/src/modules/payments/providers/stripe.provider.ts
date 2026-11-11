@@ -69,7 +69,11 @@ export class StripeProvider implements PaymentProvider {
       { payment_intent: session.payment_intent as string, amount: amountMinor },
       { idempotencyKey: key },
     );
-    if (r.status === 'failed' || r.status === 'canceled') throw new ServiceUnavailableException('Stripe refund did not succeed');
-    return { providerRef: r.id, status: r.status === 'succeeded' ? 'SUCCEEDED' as const : 'PENDING' as const };
+    if (r.status === 'failed' || r.status === 'canceled')
+      throw new ServiceUnavailableException('Stripe refund did not succeed');
+    return {
+      providerRef: r.id,
+      status: r.status === 'succeeded' ? ('SUCCEEDED' as const) : ('PENDING' as const),
+    };
   }
 }

@@ -4,16 +4,15 @@ import { ArrowUpRight, ShieldCheck } from 'lucide-react';
 import { useApi } from '@/lib/api';
 import { ErrorBox, Loading, PageTitle } from '@/components/ui';
 export default function Stores() {
-  const { data, error, loading } =
-    useApi<
-      {
-        id: string;
-        slug: string;
-        storeName: string;
-        description: string;
-        _count: { products: number };
-      }[]
-    >('/vendors');
+  const { data, error, loading } = useApi<
+    {
+      id: string;
+      slug: string;
+      storeName: string;
+      description: string;
+      _count: { products: number };
+    }[]
+  >('/vendors');
   return (
     <div className="container page">
       <PageTitle
