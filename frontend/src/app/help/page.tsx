@@ -1,4 +1,85 @@
 import Link from 'next/link';
-import {PageTitle} from '@/components/ui';
-export const metadata={title:'Help, delivery & returns'};
-export default function Help(){return <div className="container page help-page"><PageTitle eyebrow="A LITTLE HELP GOES A LONG WAY" title="Good questions. Clear answers." description="The details that make shopping feel a little easier."/><details open><summary>How does delivery work?</summary><p>Each independent store prepares and ships its part of your order. Delivery costs ৳80 per store; your checkout shows the full total before you place an order. Seeded listings estimate 2–4 working days. Follow each shipment and tracking reference in <Link className="text-link" href="/orders">My orders</Link>.</p></details><details><summary>What payment methods can I use?</summary><p>Cash on delivery is available. Stripe and SSLCommerz appear when the store operator configures their merchant credentials. bKash and Nagad remain unavailable until their merchant integrations are completed. An unavailable method cannot be selected at checkout.</p></details><details><summary>Can I return a find?</summary><p>Request a return from your orders within 14 days of delivery. The current return flow covers the full shipment from one store. Our team reviews the request, approves eligible returns, and confirms receipt before arranging the refund. Original shipping is not refunded. Cash on delivery refunds require a manual transfer and operator confirmation.</p></details><details><summary>Can I cancel my order?</summary><p>You can cancel a store’s shipment before it ships. Other stores’ shipments continue as normal. Prepaid cancelled shipments are queued for refund, including the cancelled store’s delivery charge. Pending online payments reserve stock for up to 15 minutes before expiring automatically.</p></details><details><summary>How does WELCOME10 work?</summary><p>Use WELCOME10 for 10% off goods on an order of at least ৳1,000, capped at ৳1,000. Delivery charges are excluded. This sample coupon is funded by Bazaar and expires on 31 December 2030.</p></details><details><summary>Who can leave a review?</summary><p>Customers with a verified delivered purchase can leave one review per product and edit it within seven days of posting.</p></details><details><summary>What information is stored?</summary><p>Your account holds your name, email, delivery addresses and order history. Passwords are hashed. Session cookies are HTTP-only. Vendor bank details are encrypted. Wishlists are stored on your current browser. This development marketplace contains demo products and accounts; do not submit real identity documents to a demo installation.</p></details><details><summary>How do sellers receive payouts?</summary><p>Vendor earnings, after the commission shown in their dashboard, become available after delivery. Admins prepare payout batches for eligible delivered orders with configured bank details and confirm the actual external transfer. A prepared batch is not a completed transfer.</p></details></div>;}
+import { PageTitle } from '@/components/ui';
+export const metadata = { title: 'Help, delivery & returns' };
+export default function Help() {
+  return (
+    <div className="container page help-page">
+      <PageTitle
+        eyebrow="A LITTLE HELP GOES A LONG WAY"
+        title="Good questions. Clear answers."
+        description="The details that make shopping feel a little easier."
+      />
+      <details open>
+        <summary>How does delivery work?</summary>
+        <p>
+          Each independent store prepares and ships its part of your order. Delivery costs ৳80 per
+          store; your checkout shows the full total before you place an order. Seeded listings
+          estimate 2–4 working days. Follow each shipment and tracking reference in{' '}
+          <Link className="text-link" href="/orders">
+            My orders
+          </Link>
+          .
+        </p>
+      </details>
+      <details>
+        <summary>What payment methods can I use?</summary>
+        <p>
+          Cash on delivery is available. Stripe and SSLCommerz appear when the store operator
+          configures their merchant credentials. bKash and Nagad remain unavailable until their
+          merchant integrations are completed. An unavailable method cannot be selected at checkout.
+        </p>
+      </details>
+      <details>
+        <summary>Can I return a find?</summary>
+        <p>
+          Request a return from your orders within 14 days of delivery. The current return flow
+          covers the full shipment from one store. Our team reviews the request, approves eligible
+          returns, and confirms receipt before arranging the refund. Original shipping is not
+          refunded. Cash on delivery refunds require a manual transfer and operator confirmation.
+        </p>
+      </details>
+      <details>
+        <summary>Can I cancel my order?</summary>
+        <p>
+          You can cancel a store’s shipment before it ships. Other stores’ shipments continue as
+          normal. Prepaid cancelled shipments are queued for refund, including the cancelled store’s
+          delivery charge. Pending online payments reserve stock for up to 15 minutes before
+          expiring automatically.
+        </p>
+      </details>
+      <details>
+        <summary>How does WELCOME10 work?</summary>
+        <p>
+          Use WELCOME10 for 10% off goods on an order of at least ৳1,000, capped at ৳1,000. Delivery
+          charges are excluded. This sample coupon is funded by Bazaar and expires on 31 December
+          2030.
+        </p>
+      </details>
+      <details>
+        <summary>Who can leave a review?</summary>
+        <p>
+          Customers with a verified delivered purchase can leave one review per product and edit it
+          within seven days of posting.
+        </p>
+      </details>
+      <details>
+        <summary>What information is stored?</summary>
+        <p>
+          Your account holds your name, email, delivery addresses and order history. Passwords are
+          hashed. Session cookies are HTTP-only. Vendor bank details are encrypted. Wishlists are
+          stored on your current browser. This development marketplace contains demo products and
+          accounts; do not submit real identity documents to a demo installation.
+        </p>
+      </details>
+      <details>
+        <summary>How do sellers receive payouts?</summary>
+        <p>
+          Vendor earnings, after the commission shown in their dashboard, become available after
+          delivery. Admins prepare payout batches for eligible delivered orders with configured bank
+          details and confirm the actual external transfer. A prepared batch is not a completed
+          transfer.
+        </p>
+      </details>
+    </div>
+  );
+}

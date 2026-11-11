@@ -1,4 +1,75 @@
 'use client';
-import {useState} from 'react';
-import {api,json} from '@/lib/api';
-export function AddressForm({done}:{done:()=>void}){const [error,setError]=useState(''),[busy,setBusy]=useState(false);return <form className="form" onSubmit={async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));setBusy(true);try{await api('/profile/addresses',json(data));done();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}><div className="form-row"><label>Address label<input name="label" required defaultValue="Home" maxLength={40}/></label><label>Full name<input name="name" required minLength={2} maxLength={100} autoComplete="name"/></label></div><label>Phone number<input name="phone" required type="tel" pattern="[+0-9\s-]{10,18}" placeholder="+8801700000000" autoComplete="tel"/></label><label>Street address<input name="line1" required minLength={5} maxLength={300} autoComplete="street-address"/></label><div className="form-row"><label>City<input name="city" required minLength={2} maxLength={80} autoComplete="address-level2"/></label><label>Postal code<input name="postalCode" required minLength={3} maxLength={12} autoComplete="postal-code"/></label></div>{error&&<p role="alert" className="form-error">{error}</p>}<button className="button" disabled={busy}>{busy?'Saving…':'Save address'}</button></form>;}
+import { useState } from 'react';
+import { api, json } from '@/lib/api';
+export function AddressForm({ done }: { done: () => void }) {
+  const [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.currentTarget));
+        setBusy(true);
+        try {
+          await api('/profile/addresses', json(data));
+          done();
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="form-row">
+        <label>
+          Address label
+          <input name="label" required defaultValue="Home" maxLength={40} />
+        </label>
+        <label>
+          Full name
+          <input name="name" required minLength={2} maxLength={100} autoComplete="name" />
+        </label>
+      </div>
+      <label>
+        Phone number
+        <input
+          name="phone"
+          required
+          type="tel"
+          pattern="[+0-9\s-]{10,18}"
+          placeholder="+8801700000000"
+          autoComplete="tel"
+        />
+      </label>
+      <label>
+        Street address
+        <input name="line1" required minLength={5} maxLength={300} autoComplete="street-address" />
+      </label>
+      <div className="form-row">
+        <label>
+          City
+          <input name="city" required minLength={2} maxLength={80} autoComplete="address-level2" />
+        </label>
+        <label>
+          Postal code
+          <input
+            name="postalCode"
+            required
+            minLength={3}
+            maxLength={12}
+            autoComplete="postal-code"
+          />
+        </label>
+      </div>
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+      <button className="button" disabled={busy}>
+        {busy ? 'Saving…' : 'Save address'}
+      </button>
+    </form>
+  );
+}

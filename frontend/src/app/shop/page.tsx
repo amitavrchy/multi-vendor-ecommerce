@@ -1,13 +1,184 @@
 'use client';
-import {Suspense,useState} from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import {useSearchParams,useRouter} from 'next/navigation';
-import {SlidersHorizontal,X} from 'lucide-react';
-import {useApi} from '@/lib/api';
-import {CatalogResult,Category} from '@/lib/types';
-import {ProductCard} from '@/components/product-card';
-import {Empty,ErrorBox,Loading,PageTitle} from '@/components/ui';
-function Shop(){const params=useSearchParams(),router=useRouter(),[filters,setFilters]=useState(false);const result=useApi<CatalogResult>(`/products?${params.toString()}`),categories=useApi<Category[]>('/categories');const set=(k:string,v:string)=>{const p=new URLSearchParams(params.toString());if(v)p.set(k,v);else p.delete(k);if(k!=='page')p.delete('page');router.push(`/shop?${p}`);};const category=categories.data?.find(c=>c.id===params.get('category'));
-  return <div className="container page"><p className="breadcrumb"><Link href="/">Home</Link> / Marketplace{category&&` / ${category.name}`}</p><PageTitle eyebrow="A WORLD OF GOOD FINDS" title={params.get('q')?`Finds for “${params.get('q')}”`:category?.name||'Find your next everyday favourite.'} description="Independent stores. Considered essentials. All in a good place."/><div className="shop-layout"><aside className={`filters ${filters?'show':''}`}><div className="section-heading"><h3>Categories</h3><button className="icon-button filter-close" aria-label="Close filters" onClick={()=>setFilters(false)}><X/></button></div><button className={!params.get('category')?'filter-item selected':'filter-item'} onClick={()=>set('category','')}>All good finds <span>30</span></button>{categories.data?.map(c=><button key={c.id} className={params.get('category')===c.id?'filter-item selected':'filter-item'} onClick={()=>set('category',c.id)}>{c.name}<span>{c._count.products}</span></button>)}<div className="filter-group"><h3>Price range</h3><div className="price-inputs"><label>Min (৳)<input type="number" min="0" placeholder="0" defaultValue={params.get('min')||''} onBlur={e=>set('min',e.target.value)}/></label><span>–</span><label>Max (৳)<input type="number" min="0" placeholder="Any" defaultValue={params.get('max')||''} onBlur={e=>set('max',e.target.value)}/></label></div></div><div className="filter-group"><label className="checkbox-label"><input type="checkbox" checked={params.get('inStock')==='true'} onChange={e=>set('inStock',e.target.checked?'true':'')}/> In stock only</label></div>{params.toString()&&<Link className="text-link" href="/shop">Clear all filters <X size={15}/></Link>}<div className="filter-note"><span>✳</span><h3>Small store.<br/>Big difference.</h3><p>Every order supports an independent business.</p></div></aside><div><div className="shop-toolbar"><p><strong>{result.data?.total??'…'}</strong> good finds{category&&` in ${category.name}`}</p><button className="button secondary filter-toggle" onClick={()=>setFilters(true)}><SlidersHorizontal size={18}/> Filters</button><label>Sort by <select aria-label="Sort products" value={params.get('sort')||'featured'} onChange={e=>set('sort',e.target.value)}><option value="featured">Recommended</option><option value="newest">Newest arrivals</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option><option value="rating">Highest rated</option></select></label></div>{result.loading?<Loading/>:result.error?<ErrorBox message={result.error} retry={()=>void result.refresh()}/>:!result.data?.items.length?<Empty title="No finds just yet" text="Try another search or clear a filter to discover more."/>:<><div className="product-grid shop-grid">{result.data.items.map(p=><ProductCard product={p} key={p.id}/>)}</div>{result.data.pages>1&&<div className="pagination">{Array.from({length:result.data.pages},(_,i)=><button className={i+1===result.data?.page?'selected':''} key={i} aria-label={`Page ${i+1}`} onClick={()=>set('page',String(i+1))}>{i+1}</button>)}</div>}</>}</div></div></div>;
+import { useSearchParams, useRouter } from 'next/navigation';
+import { SlidersHorizontal, X } from 'lucide-react';
+import { useApi } from '@/lib/api';
+import { CatalogResult, Category } from '@/lib/types';
+import { ProductCard } from '@/components/product-card';
+import { Empty, ErrorBox, Loading, PageTitle } from '@/components/ui';
+function Shop() {
+  const params = useSearchParams(),
+    router = useRouter(),
+    [filters, setFilters] = useState(false);
+  const result = useApi<CatalogResult>(`/products?${params.toString()}`),
+    categories = useApi<Category[]>('/categories');
+  const set = (k: string, v: string) => {
+    const p = new URLSearchParams(params.toString());
+    if (v) p.set(k, v);
+    else p.delete(k);
+    if (k !== 'page') p.delete('page');
+    router.push(`/shop?${p}`);
+  };
+  const category = categories.data?.find((c) => c.id === params.get('category'));
+  return (
+    <div className="container page">
+      <p className="breadcrumb">
+        <Link href="/">Home</Link> / Marketplace{category && ` / ${category.name}`}
+      </p>
+      <PageTitle
+        eyebrow="A WORLD OF GOOD FINDS"
+        title={
+          params.get('q')
+            ? `Finds for “${params.get('q')}”`
+            : category?.name || 'Find your next everyday favourite.'
+        }
+        description="Independent stores. Considered essentials. All in a good place."
+      />
+      <div className="shop-layout">
+        <aside className={`filters ${filters ? 'show' : ''}`}>
+          <div className="section-heading">
+            <h3>Categories</h3>
+            <button
+              className="icon-button filter-close"
+              aria-label="Close filters"
+              onClick={() => setFilters(false)}
+            >
+              <X />
+            </button>
+          </div>
+          <button
+            className={!params.get('category') ? 'filter-item selected' : 'filter-item'}
+            onClick={() => set('category', '')}
+          >
+            All good finds <span>30</span>
+          </button>
+          {categories.data?.map((c) => (
+            <button
+              key={c.id}
+              className={params.get('category') === c.id ? 'filter-item selected' : 'filter-item'}
+              onClick={() => set('category', c.id)}
+            >
+              {c.name}
+              <span>{c._count.products}</span>
+            </button>
+          ))}
+          <div className="filter-group">
+            <h3>Price range</h3>
+            <div className="price-inputs">
+              <label>
+                Min (৳)
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  defaultValue={params.get('min') || ''}
+                  onBlur={(e) => set('min', e.target.value)}
+                />
+              </label>
+              <span>–</span>
+              <label>
+                Max (৳)
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Any"
+                  defaultValue={params.get('max') || ''}
+                  onBlur={(e) => set('max', e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="filter-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={params.get('inStock') === 'true'}
+                onChange={(e) => set('inStock', e.target.checked ? 'true' : '')}
+              />{' '}
+              In stock only
+            </label>
+          </div>
+          {params.toString() && (
+            <Link className="text-link" href="/shop">
+              Clear all filters <X size={15} />
+            </Link>
+          )}
+          <div className="filter-note">
+            <span>✳</span>
+            <h3>
+              Small store.
+              <br />
+              Big difference.
+            </h3>
+            <p>Every order supports an independent business.</p>
+          </div>
+        </aside>
+        <div>
+          <div className="shop-toolbar">
+            <p>
+              <strong>{result.data?.total ?? '…'}</strong> good finds
+              {category && ` in ${category.name}`}
+            </p>
+            <button className="button secondary filter-toggle" onClick={() => setFilters(true)}>
+              <SlidersHorizontal size={18} /> Filters
+            </button>
+            <label>
+              Sort by{' '}
+              <select
+                aria-label="Sort products"
+                value={params.get('sort') || 'featured'}
+                onChange={(e) => set('sort', e.target.value)}
+              >
+                <option value="featured">Recommended</option>
+                <option value="newest">Newest arrivals</option>
+                <option value="price-asc">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
+                <option value="rating">Highest rated</option>
+              </select>
+            </label>
+          </div>
+          {result.loading ? (
+            <Loading />
+          ) : result.error ? (
+            <ErrorBox message={result.error} retry={() => void result.refresh()} />
+          ) : !result.data?.items.length ? (
+            <Empty
+              title="No finds just yet"
+              text="Try another search or clear a filter to discover more."
+            />
+          ) : (
+            <>
+              <div className="product-grid shop-grid">
+                {result.data.items.map((p) => (
+                  <ProductCard product={p} key={p.id} />
+                ))}
+              </div>
+              {result.data.pages > 1 && (
+                <div className="pagination">
+                  {Array.from({ length: result.data.pages }, (_, i) => (
+                    <button
+                      className={i + 1 === result.data?.page ? 'selected' : ''}
+                      key={i}
+                      aria-label={`Page ${i + 1}`}
+                      onClick={() => set('page', String(i + 1))}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
-export default function ShopPage(){return <Suspense fallback={<Loading/>}><Shop/></Suspense>;}
+export default function ShopPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <Shop />
+    </Suspense>
+  );
+}

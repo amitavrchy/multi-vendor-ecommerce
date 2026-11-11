@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+package-lock.json
+Project_spec.md
+artifacts
+playwright-report
+test-results
