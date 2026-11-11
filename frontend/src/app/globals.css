@@ -3115,6 +3115,130 @@ td img {
     display: none;
   }
 }
+.support-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 25px;
+  align-items: start;
+}
+.support-case {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.support-case.selected {
+  border-color: #829774;
+  background: #f7faf2;
+}
+.support-case small {
+  color: var(--muted);
+}
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  margin: 20px 0 30px;
+  max-height: 520px;
+  overflow: auto;
+}
+.message {
+  padding: 18px;
+  border-radius: 8px;
+  background: #f1f4e9;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.message.customer {
+  background: #f8f7f1;
+}
+.message p {
+  margin: 7px 0;
+}
+.message small {
+  color: var(--muted);
+}
+.case-resolution {
+  display: flex;
+  gap: 15px;
+  align-items: end;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.case-resolution label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.resolution {
+  padding: 16px;
+  background: #eaf1e0;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.category-rate {
+  display: flex;
+  align-items: end;
+  gap: 15px;
+  margin: 18px 0;
+}
+.category-rate label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+}
+.category-rate input {
+  width: 100%;
+}
+.form input[type='checkbox'] {
+  width: 17px;
+}
+.upload-input {
+  width: 100%;
+  font-size: 14px;
+  padding: 8px;
+  max-width: 100%;
+}
+.form .text-link:has(.upload-input) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.support-layout .panel {
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .support-layout {
+    grid-template-columns: 1fr;
+  }
+  .support-layout > aside {
+    display: flex;
+    overflow: auto;
+    gap: 12px;
+  }
+  .support-case {
+    min-width: 230px;
+    max-width: 300px;
+  }
+  .case-resolution {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .category-rate {
+    gap: 10px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

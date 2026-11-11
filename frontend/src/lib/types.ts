@@ -55,7 +55,12 @@ export type VendorOrder = {
   deliveredAt?: string;
   vendor: { storeName: string };
   lines: OrderLine[];
-  returns: { id: string; status: string; reason: string }[];
+  returns: {
+    id: string;
+    status: string;
+    reason: string;
+    lines?: { lineId: string; qty: number }[];
+  }[];
   order?: { shippingAddress: Address; createdAt: string };
 };
 export type Order = {

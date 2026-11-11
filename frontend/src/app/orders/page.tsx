@@ -129,6 +129,9 @@ function Orders() {
                     </p>
                   )}
                   <div className="shipment-actions">
+                    <Link className="text-link" href={`/support?shipment=${vo.id}`}>
+                      Get help
+                    </Link>
                     {['AWAITING_FULFILLMENT', 'PROCESSING'].includes(vo.status) && (
                       <button
                         className="text-button"
@@ -151,7 +154,15 @@ function Orders() {
                         >
                           Share a review
                         </button>
-                        {!vo.returns.length && (
+                        {vo.lines.some(
+                          (line) =>
+                            line.qty >
+                            vo.returns
+                              .filter((r) => r.status !== 'REJECTED')
+                              .flatMap((r) => r.lines || [])
+                              .filter((l) => l.lineId === line.id)
+                              .reduce((s, l) => s + l.qty, 0),
+                        ) && (
                           <button
                             className="text-button"
                             onClick={() => {
@@ -197,7 +208,13 @@ function Orders() {
                 if (modal.kind === 'return')
                   await api(
                     '/returns',
-                    json({ vendorOrderId: modal.vo.id, reason: f.get('body') }),
+                    json({
+                      vendorOrderId: modal.vo.id,
+                      reason: f.get('body'),
+                      lines: modal.vo.lines
+                        .map((l) => ({ lineId: l.id, qty: Number(f.get(`qty-${l.id}`)) }))
+                        .filter((l) => l.qty > 0),
+                    }),
                   );
                 else if (modal.kind === 'cancel')
                   await api(
@@ -253,6 +270,20 @@ function Orders() {
                 </label>
               </>
             )}
+            {modal.kind === 'return' &&
+              modal.vo.lines.map((line) => (
+                <label key={line.id}>
+                  {line.titleSnapshot} · quantity to return
+                  <input
+                    aria-label={`Return quantity for ${line.titleSnapshot}`}
+                    type="number"
+                    name={`qty-${line.id}`}
+                    min={0}
+                    max={line.qty}
+                    defaultValue={line.qty}
+                  />
+                </label>
+              ))}
             <label>
               {modal.kind === 'review' ? 'Tell us a little more' : 'How can we help?'}
               <textarea
@@ -265,8 +296,8 @@ function Orders() {
             </label>
             {modal.kind === 'return' && (
               <p className="fine-print">
-                Returns cover the full store shipment within 14 days of delivery. Original shipping
-                is non-refundable.
+                Choose the quantities to return. Your return window and restocking policy apply.
+                Original shipping is non-refundable.
               </p>
             )}
             {modal.kind === 'cancel' && (

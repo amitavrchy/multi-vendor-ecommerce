@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import {
   Box,
   CreditCard,
@@ -110,6 +111,18 @@ function AdminDashboard() {
         eyebrow="THE BIGGER PICTURE"
         title="Keep the good things growing."
         description="Your marketplace, with every detail in view."
+        action={
+          <div className="table-actions">
+            <Link className="button secondary" href="/support">
+              Support desk
+            </Link>
+            {user?.role === 'PLATFORM_ADMIN' && (
+              <Link className="button secondary" href="/admin/settings">
+                Marketplace settings
+              </Link>
+            )}
+          </div>
+        }
       />
       <div className="dashboard">
         <aside className="dashboard-nav">
@@ -197,7 +210,16 @@ function AdminDashboard() {
                               {Object.entries(v.kyc.documents).map(([k, value]) => (
                                 <p key={k}>
                                   {k}:{' '}
-                                  {k === 'documentUrl' ? (
+                                  {k === 'documentId' ? (
+                                    <a
+                                      className="text-link"
+                                      href={`/api/uploads/${value}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      View private document ↗
+                                    </a>
+                                  ) : k === 'documentUrl' ? (
                                     <a
                                       className="text-link"
                                       href={value}
@@ -604,6 +626,14 @@ function AdminDashboard() {
                   <strong>{e.type}</strong> · {e.attempts} attempts
                   <pre>{JSON.stringify(e.payload, null, 2)}</pre>
                   {e.lastError && <p className="form-error">{e.lastError}</p>}
+                  {user?.role === 'PLATFORM_ADMIN' && (
+                    <Action
+                      className="button secondary"
+                      onClick={() => perform(`/admin/events/${e.id}/retry`, {})}
+                    >
+                      Retry event
+                    </Action>
+                  )}
                 </article>
               ))}
             </>

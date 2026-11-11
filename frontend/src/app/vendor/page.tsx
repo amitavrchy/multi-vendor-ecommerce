@@ -17,6 +17,7 @@ import { Category, Product, VendorOrder, money } from '@/lib/types';
 import { Gate } from '@/components/gate';
 import { useStore } from '@/components/provider';
 import { Action, Badge, Empty, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
+import { UploadButton, ProductImageInput } from '@/components/upload';
 type Vendor = {
   id: string;
   storeName: string;
@@ -52,6 +53,8 @@ function VendorDashboard() {
     categories = useApi<Category[]>('/categories'),
     [tab, setTab] = useState('overview'),
     [modal, setModal] = useState<'product' | Product | null>(null),
+    [variantProduct, setVariantProduct] = useState<Product | null>(null),
+    [kycDocument, setKycDocument] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [tracking, setTracking] = useState<Record<string, string>>({});
@@ -86,6 +89,7 @@ function VendorDashboard() {
       await api(path, json(transform ? transform(f) : f, method));
       toast('Saved successfully');
       setModal(null);
+      setVariantProduct(null);
       await reload();
     } catch (e) {
       setError((e as Error).message);
@@ -283,6 +287,29 @@ function VendorDashboard() {
                                 className="text-link"
                                 onClick={() => {
                                   setError('');
+                                  setVariantProduct(p);
+                                }}
+                              >
+                                Variants ({p.variants.length})
+                              </button>
+                            )}
+                            {user?.role === 'VENDOR_OWNER' && (
+                              <button
+                                type="button"
+                                className="text-button muted"
+                                onClick={() =>
+                                  void perform(`/vendor/products/${p.id}`, {}, 'DELETE')
+                                }
+                              >
+                                Archive
+                              </button>
+                            )}
+                            {user?.role === 'VENDOR_OWNER' && (
+                              <button
+                                type="button"
+                                className="text-link"
+                                onClick={() => {
+                                  setError('');
                                   setModal(p);
                                 }}
                               >
@@ -432,14 +459,20 @@ function VendorDashboard() {
               <h2>A store people can trust.</h2>
               <p>
                 Submit your business information and a secure link to your verification document.
-                Private object storage uploads can be added with your production storage provider.
+                Upload a private verification document or provide a secure link.
               </p>
               {v.kyc?.note && <p className="form-error">Review note: {v.kyc.note}</p>}
               {['APPLIED', 'KYC_PENDING', 'REJECTED'].includes(v.status) ? (
                 <form
                   className="form"
                   style={{ marginTop: 22 }}
-                  onSubmit={(e) => void submit(e, '/vendor/kyc')}
+                  onSubmit={(e) =>
+                    void submit(e, '/vendor/kyc', (f) => ({
+                      ...f,
+                      ...(!f.documentUrl ? { documentUrl: undefined } : {}),
+                      ...(kycDocument ? { documentId: kycDocument } : {}),
+                    }))
+                  }
                 >
                   <label>
                     Legal business name
@@ -456,9 +489,13 @@ function VendorDashboard() {
                       type="url"
                       pattern="https://.*"
                       placeholder="https://…"
-                      required
+                      required={!kycDocument}
                     />
                   </label>
+                  <UploadButton scope="KYC" onUploaded={(r) => setKycDocument(r.id)} />
+                  {kycDocument && (
+                    <p className="success-text">Private verification document uploaded.</p>
+                  )}
                   {error && <p className="form-error">{error}</p>}
                   <button disabled={busy} className="button">
                     Submit for verification
@@ -547,6 +584,77 @@ function VendorDashboard() {
           )}
         </div>
       </div>
+      {variantProduct && (
+        <Modal title={`Variants · ${variantProduct.title}`} close={() => setVariantProduct(null)}>
+          {variantProduct.variants.map((variant) => (
+            <form
+              className="category-rate"
+              key={variant.id}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void perform(
+                  `/vendor/products/${variant.id}/inventory`,
+                  { stockQty: Number(new FormData(e.currentTarget).get('stock')) },
+                  'PATCH',
+                );
+              }}
+            >
+              <label>
+                {variant.sku} · {Object.values(variant.attrs).join(' / ')}
+                <input
+                  type="number"
+                  min={variant.reservedQty}
+                  max={100000}
+                  name="stock"
+                  defaultValue={variant.stockQty}
+                  required
+                />
+              </label>
+              <button className="button secondary">Save stock</button>
+            </form>
+          ))}
+          <h3 style={{ margin: '20px 0' }}>Add a variant</h3>
+          <form
+            className="form"
+            onSubmit={(e) =>
+              void submit(e, `/vendor/products/${variantProduct.id}/variants`, (f) => ({
+                sku: f.sku,
+                priceMinor: Math.round(Number(f.price) * 100),
+                stockQty: Number(f.stockQty),
+                attrs: JSON.parse(String(f.attrs)),
+              }))
+            }
+          >
+            <label>
+              SKU
+              <input name="sku" required minLength={3} maxLength={100} />
+            </label>
+            <div className="form-row">
+              <label>
+                Price (৳)
+                <input name="price" type="number" min="1" step="0.01" required />
+              </label>
+              <label>
+                Stock
+                <input name="stockQty" type="number" min="0" max="100000" required />
+              </label>
+            </div>
+            <label>
+              Attributes (JSON)
+              <textarea
+                name="attrs"
+                rows={3}
+                defaultValue={'{"Color":"Original","Size":"Standard"}'}
+                required
+              />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <button className="button" disabled={busy}>
+              Add variant for moderation
+            </button>
+          </form>
+        </Modal>
+      )}
       {modal && (
         <Modal
           title={editing ? 'Refine your good find' : 'Introduce a new good find'}
@@ -625,10 +733,7 @@ function VendorDashboard() {
                 rows={4}
               />
             </label>
-            <label>
-              Image URL
-              <input name="image" required defaultValue={editing?.image || '/products/01.jpg'} />
-            </label>
+            <ProductImageInput defaultValue={editing?.image || '/products/01.jpg'} />
             <div className="form-row">
               <label>
                 Price (৳)

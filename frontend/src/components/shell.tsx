@@ -126,6 +126,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   >
                     {user.role === 'CUSTOMER' ? 'My orders' : 'Dashboard'}
                   </Link>
+                  <Link href="/support">Support</Link>
                   <button className="text-button" onClick={() => void logout()}>
                     Sign out
                   </button>
@@ -148,7 +149,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </span>
           <span>
             <ShoppingBag />
-            14-day easy returns
+            Easy eligible returns
           </span>
           <span>
             <Heart />
