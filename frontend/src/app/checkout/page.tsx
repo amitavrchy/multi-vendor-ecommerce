@@ -1,14 +1,16 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CreditCard, MapPin, Plus, ShieldCheck, Wallet } from 'lucide-react';
 import { api, json, useApi } from '@/lib/api';
-import { Address, money } from '@/lib/types';
+import { Address, CartItem, money } from '@/lib/types';
 import { useStore } from '@/components/provider';
 import { Gate } from '@/components/gate';
 import { AddressForm } from '@/components/address-form';
 import { Empty, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
 type Quote = {
+  items: CartItem[];
+  retailGoodsMinor: number;
   couponFunding?: string | null;
   goodsMinor: number;
   discountMinor: number;
@@ -16,7 +18,10 @@ type Quote = {
   grandMinor: number;
 };
 function Checkout() {
-  const { cart, refresh } = useStore(),
+  const { cart: bag, refresh } = useStore(),
+    search = useSearchParams(),
+    quoteId = search.get('quote') || undefined,
+    renewalId = search.get('renewal') || undefined,
     router = useRouter(),
     addresses = useApi<Address[]>('/profile/addresses'),
     methods = useApi<{ code: string; available: boolean }[]>('/payments/providers'),
@@ -31,12 +36,29 @@ function Checkout() {
     [busy, setBusy] = useState(false),
     [key, setKey] = useState('');
   useEffect(() => {
+    let active = true;
+    setQuote(null);
+    setApplied('');
+    setCode('');
+    setError('');
     setKey(crypto.randomUUID());
-    api<Quote>('/cart/quote', json({}))
-      .then(setQuote)
-      .catch((e) => setError(e.message));
-  }, []);
+    api<Quote>('/checkout/preview', json({ quoteId, renewalId }))
+      .then((value) => {
+        if (active) setQuote(value);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [quoteId, renewalId]);
+  const cart = quote?.items || bag;
   const selected = addressId || addresses.data?.[0]?.id;
+  if ((quoteId || renewalId) && !quote)
+    return (
+      <div className="container page">{error ? <ErrorBox message={error} /> : <Loading />}</div>
+    );
   if (!cart.length)
     return (
       <Empty
@@ -70,6 +92,8 @@ function Checkout() {
               ...json({
                 addressId: selected,
                 provider,
+                quoteId,
+                renewalId,
                 ...(applied ? { couponCode: applied } : {}),
               }),
               headers: { 'Idempotency-Key': key },
@@ -204,7 +228,9 @@ function Checkout() {
               className="text-link"
               onClick={async () => {
                 try {
-                  setQuote(await api('/cart/quote', json({ code })));
+                  setQuote(
+                    await api('/checkout/preview', json({ couponCode: code, quoteId, renewalId })),
+                  );
                   setApplied(code);
                   setCouponError('');
                 } catch (e) {
@@ -223,7 +249,7 @@ function Checkout() {
                 type="button"
                 className="text-button"
                 onClick={async () => {
-                  setQuote(await api('/cart/quote', json({})));
+                  setQuote(await api('/checkout/preview', json({ quoteId, renewalId })));
                   setApplied('');
                   setCode('');
                 }}
@@ -292,7 +318,9 @@ function Checkout() {
 export default function CheckoutPage() {
   return (
     <Gate>
-      <Checkout />
+      <Suspense fallback={<Loading />}>
+        <Checkout />
+      </Suspense>
     </Gate>
   );
 }

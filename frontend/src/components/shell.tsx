@@ -189,6 +189,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/wishlist">Saved favourites</Link>
             <Link href="/activity">Price & stock alerts</Link>
             <Link href="/compare">Compare finds</Link>
+            <Link href="/rewards">Rewards & referrals</Link>
+            <Link href="/subscriptions">Your subscriptions</Link>
+            <Link href="/business">Business buying</Link>
           </div>
           <div>
             <h3>Build something good</h3>

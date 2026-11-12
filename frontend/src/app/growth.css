@@ -1,0 +1,247 @@
+.wholesale-panel > label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+.wholesale-panel > label select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.growth-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 28px;
+  align-items: start;
+}
+.growth-columns .panel {
+  min-width: 0;
+}
+.growth-record {
+  border-top: 1px solid var(--line);
+  padding: 24px 0;
+}
+.growth-record h3 {
+  font-size: 19px;
+  margin: 0;
+}
+.growth-record p {
+  overflow-wrap: anywhere;
+}
+.growth-record .section-heading {
+  gap: 15px;
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+.growth-record .form {
+  max-width: 650px;
+}
+.growth-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 20px 0 5px;
+}
+.growth-actions .button {
+  font-size: 14px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.form-row label {
+  min-width: 0;
+}
+.check-line {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px;
+  flex-direction: row !important;
+  font-size: 14px;
+}
+.check-line input {
+  margin-top: 5px;
+}
+.growth-product-tools {
+  margin-top: 24px;
+}
+.growth-product-tools details {
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+.growth-product-tools summary {
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+}
+.growth-product-tools summary svg {
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.growth-product-tools p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.growth-product-tools .form {
+  margin-top: 18px;
+}
+.growth-product-tools table {
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+.reward-balance {
+  background: #edf2e5;
+}
+.reward-balance > span {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.reward-balance > strong {
+  display: block;
+  font-size: 72px;
+  line-height: 1.2;
+  letter-spacing: -0.05em;
+  margin: 20px 0;
+  color: var(--green);
+}
+.reward-balance p {
+  font-size: 14px;
+  color: #66725e;
+}
+.referral-code {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 20px;
+  background: var(--cream);
+  flex-wrap: wrap;
+}
+.referral-code code {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+}
+.voucher-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.voucher-grid article {
+  border: 1px dashed #a7b797;
+  padding: 22px;
+  border-radius: 8px;
+  background: #f6f8ef;
+  display: flex;
+  gap: 12px;
+  flex-direction: column;
+}
+.voucher-grid strong {
+  font-size: 23px;
+}
+.voucher-grid code {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.voucher-grid small {
+  font-size: 14px;
+}
+.subscription-header {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.subscription-header > img {
+  width: 120px;
+  height: 140px;
+  border-radius: 8px;
+}
+.subscription-header h2 {
+  margin-top: 0;
+}
+.subscription-header p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.newsletter-signup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  padding: 48px;
+  background: #eceee2;
+  border: 1px solid #dde1d2;
+  border-radius: 8px;
+  margin: 30px 0 70px;
+  align-items: center;
+}
+.newsletter-signup h2 {
+  font-size: clamp(28px, 3.5vw, 44px);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+}
+.newsletter-signup .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.newsletter-signup p {
+  color: #5c6c57;
+}
+.newsletter-signup label {
+  font-size: 14px;
+}
+.newsletter-signup .form-error {
+  color: #a43830;
+}
+.newsletter-signup .success-text {
+  color: #244d3c;
+}
+@media (max-width: 760px) {
+  .growth-columns {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .growth-record h3 {
+    font-size: 18px;
+  }
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .voucher-grid {
+    grid-template-columns: 1fr;
+  }
+  .subscription-header {
+    gap: 14px;
+  }
+  .subscription-header > img {
+    width: 75px;
+    height: 95px;
+  }
+  .subscription-header h2 {
+    font-size: 21px;
+  }
+  .newsletter-signup {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 27px 22px;
+    margin-bottom: 45px;
+  }
+  .newsletter-signup h2 {
+    font-size: 34px;
+  }
+  .referral-code {
+    padding: 16px;
+    gap: 12px;
+  }
+  .growth-actions {
+    gap: 12px;
+  }
+}

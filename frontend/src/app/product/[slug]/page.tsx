@@ -9,6 +9,7 @@ import { Empty, ErrorBox, Loading, Action } from '@/components/ui';
 import { ProductCard } from '@/components/product-card';
 import { ProductIntelligence, FollowButton } from '@/components/shopping-tools';
 import { ProductImage } from '@/components/product-image';
+import { ProductGrowthTools } from '@/components/growth-tools';
 export default function Detail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params),
     { data: p, error, loading } = useApi<Product>(`/products/${slug}`),
@@ -136,6 +137,7 @@ export default function Detail({ params }: { params: Promise<{ slug: string }> }
             <p>{p.description}</p>
           </details>
           <ProductIntelligence product={p} variantId={v.id} />
+          <ProductGrowthTools variantId={v.id} />
         </section>
       </div>
       <section id="reviews" className="reviews-section">

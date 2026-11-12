@@ -39,6 +39,15 @@ function Account() {
         }
       />
       <div className="account-tools">
+        <Link className="button secondary" href="/rewards">
+          Rewards & referrals →
+        </Link>
+        <Link className="button secondary" href="/subscriptions">
+          Subscriptions →
+        </Link>
+        <Link className="button secondary" href="/business">
+          Business buying →
+        </Link>
         <Link className="button secondary" href="/activity">
           <Bell size={18} />
           Price & stock alerts
