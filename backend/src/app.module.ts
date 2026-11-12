@@ -31,6 +31,7 @@ import { DisputesController } from './disputes.controller';
 import { DeliveryService } from './delivery.service';
 import { CacheService } from './cache.service';
 import { CacheInvalidation } from './cache.interceptor';
+import { HealthController } from './health.controller';
 @Module({
   imports: [
     JwtModule.register({
@@ -40,6 +41,7 @@ import { CacheInvalidation } from './cache.interceptor';
     }),
   ],
   controllers: [
+    HealthController,
     UploadsController,
     PolicyController,
     DisputesController,

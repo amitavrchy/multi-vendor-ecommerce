@@ -19,6 +19,14 @@ export class CacheService implements OnModuleDestroy {
       void this.redis.connect().catch(() => {});
     }
   }
+  async ready() {
+    if (!config.REDIS_URL) return true;
+    try {
+      return this.redis?.status === 'ready' && (await this.redis.ping()) === 'PONG';
+    } catch {
+      return false;
+    }
+  }
   async remember<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
     let version = String(this.version);
     try {

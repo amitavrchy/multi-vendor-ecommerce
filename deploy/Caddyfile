@@ -1,0 +1,10 @@
+{$SITE_HOST} {
+	encode zstd gzip
+	@api path /api/* /socket.io/*
+	handle @api {
+		reverse_proxy api:4187
+	}
+	handle {
+		reverse_proxy web:3187
+	}
+}
