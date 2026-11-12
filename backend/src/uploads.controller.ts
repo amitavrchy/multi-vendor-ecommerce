@@ -123,6 +123,11 @@ export class UploadsController {
           { expiresIn: 60 },
         ),
       );
-    return res.type(record.contentType).sendFile(path.join(root, record.objectKey));
+    return res.type(record.contentType).sendFile(path.join(root, record.objectKey), (error) => {
+      if (error && !res.headersSent) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(404).json({ message: 'Uploaded file is unavailable' });
+      }
+    });
   }
 }

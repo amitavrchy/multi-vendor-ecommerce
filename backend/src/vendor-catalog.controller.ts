@@ -127,6 +127,23 @@ export class VendorCatalogController {
       });
       if (!p) throw new NotFoundException();
       const { priceMinor, compareAtMinor, ...product } = d;
+      if (priceMinor !== undefined && priceMinor !== p.variants[0].priceMinor) {
+        const previous = await tx.pricePoint.count({ where: { variantId: p.variants[0].id } });
+        await tx.pricePoint.createMany({
+          data: [
+            ...(!previous
+              ? [
+                  {
+                    variantId: p.variants[0].id,
+                    priceMinor: p.variants[0].priceMinor,
+                    recordedAt: new Date(Date.now() - 1),
+                  },
+                ]
+              : []),
+            { variantId: p.variants[0].id, priceMinor },
+          ],
+        });
+      }
       if (priceMinor !== undefined || compareAtMinor !== undefined)
         await tx.productVariant.update({
           where: { id: p.variants[0].id },

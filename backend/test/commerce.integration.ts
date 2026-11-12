@@ -27,6 +27,10 @@ import { JobsService } from '../src/jobs.service';
 import { testDatabaseUrl } from './database';
 import { bootstrapAdmin } from '../src/auth/bootstrap';
 import { compare } from 'bcryptjs';
+import { DiscoveryController } from '../src/discovery.controller';
+import { ShoppingAlertsService } from '../src/shopping-alerts.service';
+import { AnalyticsController } from '../src/analytics.controller';
+import { VendorCatalogController } from '../src/vendor-catalog.controller';
 import { RefundContext, RefundResult, RefundState } from '../src/modules/payments/refund';
 const url = testDatabaseUrl();
 test('production admin bootstrap creates a hashed admin and refuses account takeover', async () => {
@@ -763,4 +767,148 @@ test('expired idempotency windows do not reinitiate uncertain refunds', async ()
     (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
     'MANUAL_REVIEW',
   );
+});
+
+test('saved favourites merge idempotently, remain private and hide unapproved products', async () => {
+  const f = await fixture(),
+    other = await fixture();
+  const discovery = new DiscoveryController(db),
+    p = f.vendors[0].products[0];
+  await discovery.save(f.user, { productId: p.id });
+  await discovery.merge(f.user, { ids: [p.id, p.id, f.vendors[1].products[0].id] });
+  assert.equal((await discovery.saved(f.user)).length, 2);
+  assert.equal((await discovery.saved(other.user)).length, 0);
+  await discovery.unsave(other.user, p.id);
+  assert.equal((await discovery.saved(f.user)).length, 2);
+  await db.product.update({ where: { id: p.id }, data: { status: 'DRAFT' } });
+  assert.equal((await discovery.saved(f.user)).length, 1);
+  await assert.rejects(discovery.save(other.user, { productId: p.id }));
+});
+
+test('price and stock alerts trigger only when eligible, exactly once across workers', async () => {
+  const f = await fixture(0),
+    discovery = new DiscoveryController(db),
+    worker = new ShoppingAlertsService(db);
+  const p = f.vendors[0].products[0],
+    v = p.variants[0];
+  const price = await discovery.alert(f.user, {
+    variantId: v.id,
+    kind: 'PRICE',
+    targetMinor: 8000,
+  });
+  const stock = await discovery.alert(f.user, { variantId: v.id, kind: 'STOCK' });
+  await worker.check();
+  assert.equal(
+    await db.outboxEvent.count({
+      where: { id: { in: [`shopping-alert:${price.id}:1`, `shopping-alert:${stock.id}:1`] } },
+    }),
+    0,
+  );
+  await db.productVariant.update({
+    where: { id: v.id },
+    data: { priceMinor: 7500, stockQty: 2, reservedQty: 2 },
+  });
+  await Promise.all([worker.check(), worker.check()]);
+  assert.equal(await db.outboxEvent.count({ where: { id: `shopping-alert:${price.id}:1` } }), 1);
+  assert.equal((await db.productAlert.findUniqueOrThrow({ where: { id: stock.id } })).active, true);
+  await db.productVariant.update({ where: { id: v.id }, data: { reservedQty: 1 } });
+  await Promise.all([worker.check(), worker.check()]);
+  assert.equal(await db.outboxEvent.count({ where: { id: `shopping-alert:${stock.id}:1` } }), 1);
+  await assert.rejects(discovery.alert(f.user, { variantId: v.id, kind: 'STOCK' }));
+  await assert.rejects(
+    discovery.alert(f.user, { variantId: v.id, kind: 'PRICE', targetMinor: 9000 }),
+  );
+  const rearmed = await discovery.alert(f.user, {
+    variantId: v.id,
+    kind: 'PRICE',
+    targetMinor: 7000,
+  });
+  assert.equal(rearmed.generation, 2);
+  await db.productVariant.update({ where: { id: v.id }, data: { priceMinor: 6500 } });
+  await worker.check();
+  assert.equal(await db.outboxEvent.count({ where: { id: `shopping-alert:${price.id}:2` } }), 1);
+});
+
+test('alerts enforce account ownership and do not advertise suspended stores', async () => {
+  const f = await fixture(),
+    other = await fixture(),
+    discovery = new DiscoveryController(db);
+  const v = f.vendors[0].products[0].variants[0];
+  const alert = await discovery.alert(f.user, {
+    variantId: v.id,
+    kind: 'PRICE',
+    targetMinor: 9000,
+  });
+  await assert.rejects(discovery.cancelAlert(other.user, alert.id));
+  assert.equal((await discovery.alerts(other.user)).length, 0);
+  await db.productVariant.update({ where: { id: v.id }, data: { priceMinor: 8000 } });
+  await db.vendor.update({ where: { id: f.vendors[0].id }, data: { status: 'SUSPENDED' } });
+  await new ShoppingAlertsService(db).check();
+  assert.equal((await db.productAlert.findUniqueOrThrow({ where: { id: alert.id } })).active, true);
+  await discovery.cancelAlert(f.user, alert.id);
+});
+
+test('store follows and recommendations remain active, personalized and deduplicated', async () => {
+  const f = await fixture(),
+    discovery = new DiscoveryController(db);
+  await discovery.follow(f.user, f.vendors[0].id);
+  await discovery.follow(f.user, f.vendors[0].id);
+  assert.equal((await discovery.following(f.user)).length, 1);
+  const saved = f.vendors[0].products[0];
+  await discovery.save(f.user, { productId: saved.id });
+  const recs = await discovery.recommendations(f.user);
+  assert.ok(recs.items.length > 0);
+  assert.ok(recs.items.every((p) => p.id !== saved.id && p.status === 'ACTIVE'));
+  assert.equal(new Set(recs.items.map((p) => p.id)).size, recs.items.length);
+  await db.vendor.update({ where: { id: f.vendors[0].id }, data: { status: 'SUSPENDED' } });
+  assert.equal((await discovery.following(f.user)).length, 0);
+  await assert.rejects(discovery.follow(f.user, f.vendors[0].id));
+});
+
+test('price history records actual changes and hides draft product history', async () => {
+  const f = await fixture(),
+    scope = new VendorScope(db),
+    owned = await scope.get(f.owner, true);
+  const p = f.vendors.find((v) => v.id === owned.id)!.products[0],
+    discovery = new DiscoveryController(db);
+  await new VendorCatalogController(db, scope).edit(f.owner, p.id, { priceMinor: 9000 });
+  await assert.rejects(discovery.prices(p.variants[0].id));
+  await db.product.update({ where: { id: p.id }, data: { status: 'ACTIVE' } });
+  const history = await discovery.prices(p.variants[0].id);
+  assert.equal(history.currentMinor, 9000);
+  assert.deepEqual(
+    history.points.map((point) => point.priceMinor),
+    [p.variants[0].priceMinor, 9000],
+  );
+});
+
+test('seller analytics scope sales and ledger earnings to the owning store', async () => {
+  const f = await fixture(),
+    report = new AnalyticsController(db, scope),
+    owned = await scope.get(f.owner, true);
+  const result = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE' },
+    randomUUID(),
+  );
+  await pay(result.orderId);
+  await db.vendorLedgerEntry.create({
+    data: {
+      vendorId: owned.id,
+      type: 'SALE',
+      amountMinor: 1234,
+      refId: `analytics:${randomUUID()}`,
+    },
+  });
+  const data = await report.report(f.owner, '14');
+  assert.equal(data.summary.orders, 1);
+  assert.equal(data.summary.netEarnedMinor, 1234);
+  assert.equal(data.series.length, 14);
+  assert.equal(data.topProducts.length, 1);
+  assert.equal(
+    data.summary.salesMinor,
+    f.vendors.find((v) => v.id === owned.id)!.products[0].variants[0].priceMinor,
+  );
+  await assert.rejects(report.report(f.user, 14));
+  await assert.rejects(report.report(f.owner, 365));
 });

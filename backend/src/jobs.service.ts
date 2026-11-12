@@ -10,6 +10,7 @@ import { PayoutsController } from './payouts.controller';
 import { CacheService } from './cache.service';
 import { ProviderRegistry } from './modules/payments/registry';
 import { WebhookController } from './modules/payments/webhook.controller';
+import { ShoppingAlertsService } from './shopping-alerts.service';
 @Injectable()
 export class JobsService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
@@ -56,6 +57,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
+      await new ShoppingAlertsService(this.db).check();
       await this.refunds.reconcileDue();
       const pendingPayments = await this.db.payment.findMany({
         where: {
@@ -137,7 +139,20 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
           const p = event.payload as Record<string, string>;
           if (event.type === 'CACHE_INVALIDATION') await this.cache.purge();
           else if (event.type === 'REFUND_REQUESTED') await this.refunds.process(p.refundId);
-          else if (p.userId) {
+          else if (event.type === 'SHOPPING_ALERT') {
+            await this.db.notification.upsert({
+              where: { eventId: event.id },
+              create: { eventId: event.id, userId: p.userId, title: p.title, body: p.body },
+              update: {},
+            });
+            const user = await this.db.user.findUniqueOrThrow({ where: { id: p.userId } });
+            await this.delivery.deliver(event.id, {
+              email: user.email,
+              subject: `Bazaar · ${p.title}`,
+              text: `${p.body} ${config.APP_URL}${p.path}`,
+            });
+            this.live.notify(`user:${p.userId}`, 'shopping.alert', p);
+          } else if (p.userId) {
             const title = event.type.toLowerCase().replaceAll('_', ' ');
             await this.db.notification.upsert({
               where: { eventId: event.id },

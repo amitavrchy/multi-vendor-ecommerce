@@ -32,6 +32,8 @@ import { DeliveryService } from './delivery.service';
 import { CacheService } from './cache.service';
 import { CacheInvalidation } from './cache.interceptor';
 import { HealthController } from './health.controller';
+import { DiscoveryController } from './discovery.controller';
+import { AnalyticsController } from './analytics.controller';
 @Module({
   imports: [
     JwtModule.register({
@@ -41,6 +43,8 @@ import { HealthController } from './health.controller';
     }),
   ],
   controllers: [
+    DiscoveryController,
+    AnalyticsController,
     HealthController,
     UploadsController,
     PolicyController,
