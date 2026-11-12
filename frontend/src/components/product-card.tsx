@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { Heart, Plus, Star } from 'lucide-react';
 import { Product, money } from '@/lib/types';
 import { useStore } from './provider';
+import { CompareButton } from './shopping-tools';
+import { ProductImage } from './product-image';
 export function ProductCard({ product: p }: { product: Product }) {
   const { wishlist, toggleWish, add } = useStore();
   const v = p.variants[0],
@@ -16,7 +18,7 @@ export function ProductCard({ product: p }: { product: Product }) {
     <article className="product-card">
       <div className="product-image">
         <Link href={`/product/${p.slug}`} tabIndex={-1}>
-          <img src={p.image} alt={p.title} loading="lazy" />
+          <ProductImage src={p.image} alt={p.title} loading="lazy" />
         </Link>
         {discount > 0 && <span className="discount">−{discount}%</span>}
         <button
@@ -38,6 +40,7 @@ export function ProductCard({ product: p }: { product: Product }) {
         </button>
       </div>
       <div className="product-meta">
+        <CompareButton id={p.id} />
         <Link className="vendor-name" href={`/shop?vendor=${p.vendor.slug}`}>
           {p.vendor.storeName}
         </Link>

@@ -15,7 +15,7 @@ export default function Wishlist() {
       <PageTitle
         eyebrow="KEEP THE GOOD ONES CLOSE"
         title="Your saved favourites."
-        description="A little collection of things that feel like you. Saved on this browser."
+        description="Keep the good finds close. Sign in to sync your favourites across devices."
       />
       {loading ? (
         <Loading />

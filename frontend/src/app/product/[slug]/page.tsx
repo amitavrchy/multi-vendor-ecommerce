@@ -7,6 +7,8 @@ import { Product, CatalogResult, money } from '@/lib/types';
 import { useStore } from '@/components/provider';
 import { Empty, ErrorBox, Loading, Action } from '@/components/ui';
 import { ProductCard } from '@/components/product-card';
+import { ProductIntelligence, FollowButton } from '@/components/shopping-tools';
+import { ProductImage } from '@/components/product-image';
 export default function Detail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params),
     { data: p, error, loading } = useApi<Product>(`/products/${slug}`),
@@ -33,7 +35,7 @@ export default function Detail({ params }: { params: Promise<{ slug: string }> }
       </p>
       <div className="detail-grid">
         <div className="detail-image">
-          <img src={p.image} alt={p.title} />
+          <ProductImage src={p.image} alt={p.title} />
           <span className="image-note">Thoughtful design. Everyday quality.</span>
         </div>
         <section className="detail-info">
@@ -50,6 +52,7 @@ export default function Detail({ params }: { params: Promise<{ slug: string }> }
             {money(v.priceMinor)} {v.compareAtMinor && <del>{money(v.compareAtMinor)}</del>}
           </div>
           <p className="muted">{p.description.split('. ').slice(0, 2).join('. ')}.</p>
+          <FollowButton vendorId={p.vendor.id} />
           {p.variants.length > 1 && (
             <label>
               Choose a variant
@@ -132,6 +135,7 @@ export default function Detail({ params }: { params: Promise<{ slug: string }> }
             <summary>The details</summary>
             <p>{p.description}</p>
           </details>
+          <ProductIntelligence product={p} variantId={v.id} />
         </section>
       </div>
       <section id="reviews" className="reviews-section">

@@ -38,6 +38,15 @@ function Account() {
           </Link>
         }
       />
+      <div className="account-tools">
+        <Link className="button secondary" href="/activity">
+          <Bell size={18} />
+          Price & stock alerts
+        </Link>
+        <Link className="button secondary" href="/discover">
+          Your discovery edit →
+        </Link>
+      </div>
       <div className="account-grid">
         <section className="panel">
           <h2>

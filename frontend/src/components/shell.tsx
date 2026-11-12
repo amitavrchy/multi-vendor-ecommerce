@@ -18,6 +18,8 @@ import {
   Store,
 } from 'lucide-react';
 import { useStore } from './provider';
+import { CompareDock } from './shopping-tools';
+import { SearchSuggestions } from './search-suggestions';
 export function Shell({ children }: { children: React.ReactNode }) {
   const { user, cart, wishlist, logout } = useStore(),
     path = usePathname(),
@@ -55,6 +57,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               onChange={(e) => setQuery(e.target.value)}
             />
             <kbd>↵</kbd>
+            <SearchSuggestions query={query} close={() => setQuery('')} />
           </form>
           <div className="header-actions">
             <Link href={user ? '/account' : '/login'} className="account-link">
@@ -97,6 +100,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 ['/shop?sort=newest', 'New arrivals'],
                 ['/shop?sort=featured', 'The good edit'],
                 ['/stores', 'Our stores'],
+                ['/discover', 'For you'],
               ].map(([href, label], i) => (
                 <Link
                   className={path === href ? 'active' : ''}
@@ -183,6 +187,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/account">My account</Link>
             <Link href="/orders">Orders & returns</Link>
             <Link href="/wishlist">Saved favourites</Link>
+            <Link href="/activity">Price & stock alerts</Link>
+            <Link href="/compare">Compare finds</Link>
           </div>
           <div>
             <h3>Build something good</h3>
@@ -202,6 +208,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span>BDT ৳ · Bangladesh</span>
         </div>
       </footer>
+      <CompareDock />
     </>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Provider } from '@/components/provider';
 import { Shell } from '@/components/shell';
 import './globals.css';
+import './shopping.css';
 export const metadata: Metadata = {
   title: { default: 'Bazaar — Good finds, great people', template: '%s | Bazaar' },
   description:
