@@ -17,7 +17,7 @@ async function main() {
   await db.$disconnect();
   const result = spawnSync(
     process.execPath,
-    [path.resolve('../node_modules/prisma/build/index.js'), 'migrate', 'deploy'],
+    [path.resolve('node_modules/prisma/build/index.js'), 'migrate', 'deploy'],
     { stdio: 'inherit', env: { ...process.env, DATABASE_URL: url.toString() } },
   );
   if (result.status !== 0) process.exit(result.status || 1);

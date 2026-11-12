@@ -31,7 +31,7 @@ const photos = [
   '1600369671236-e74521d4b6ad',
   '1507473885765-e6ed057f782c',
 ];
-await mkdir('frontend/public/products', { recursive: true });
+await mkdir('public/products', { recursive: true });
 for (let i = 0; i < photos.length; i++) {
   let res = await fetch(
     `https://images.unsplash.com/photo-${photos[i]}?auto=format&fit=crop&w=800&q=85`,
@@ -44,7 +44,7 @@ for (let i = 0; i < photos.length; i++) {
   }
   if (!res.ok) throw new Error('Asset download failed');
   await writeFile(
-    `frontend/public/products/${String(i + 1).padStart(2, '0')}.jpg`,
+    `public/products/${String(i + 1).padStart(2, '0')}.jpg`,
     Buffer.from(await res.arrayBuffer()),
   );
 }
@@ -52,5 +52,5 @@ const hero = await fetch(
   'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1600&q=90',
 );
 if (!hero.ok) throw new Error('Hero download failed');
-await writeFile('frontend/public/products/hero.jpg', Buffer.from(await hero.arrayBuffer()));
+await writeFile('public/products/hero.jpg', Buffer.from(await hero.arrayBuffer()));
 console.log('Downloaded 31 photographs. See ASSETS.md for credits.');

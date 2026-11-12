@@ -1,3 +1,4 @@
+# Reference only: GitHub requires this file at .github/workflows/ci.yml to activate it.
 name: Marketplace checks
 on: [push, pull_request]
 permissions:
@@ -8,12 +9,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Validate production composition
-        run: docker compose --env-file .env.production.example -f compose.production.yml config --no-env-resolution --quiet
-      - name: Validate HTTPS routing configuration
-        run: docker run --rm -e SITE_HOST=example.test -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
-      - run: docker build --target api -t bazaar-api:ci .
-      - run: docker build --target web -t bazaar-web:ci .
+      - run: docker compose --env-file backend/deploy/.env.production.example -f backend/deploy/compose.production.yml config --no-env-resolution --quiet
+      - run: docker run --rm -e SITE_HOST=example.test -v "$PWD/backend/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - run: docker build -t bazaar-api:ci backend
+      - run: docker build -t bazaar-web:ci frontend
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -46,30 +45,30 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run db:generate
-      - run: npm run db:migrate
-      - run: npm run db:seed
-      - run: npm run typecheck
-      - run: npm run format:check
-      - run: npm test
-      - run: npm run test:integration
-      - run: npm run build
-      - run: npm audit --audit-level=high
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci --prefix backend && npm ci --prefix frontend
+      - run: npm run db:generate --prefix backend
+      - run: npm run db:migrate --prefix backend
+      - run: npm run db:seed --prefix backend
+      - run: npm run verify --prefix backend
+      - run: npm audit --audit-level=high --prefix backend && npm audit --audit-level=high --prefix frontend
       - run: npx playwright install --with-deps chromium
+        working-directory: frontend
       - name: Start application and run browser workflows
         run: |
-          npm run start -w backend > /tmp/bazaar-api.log 2>&1 &
-          npm run start -w frontend > /tmp/bazaar-web.log 2>&1 &
+          npm start --prefix backend > /tmp/bazaar-api.log 2>&1 &
+          npm start --prefix frontend > /tmp/bazaar-web.log 2>&1 &
           for attempt in $(seq 1 60); do
             if curl -fsS http://localhost:3187/api/products > /dev/null; then break; fi
             sleep 1
           done
-          npm run test:e2e
+          npm run test:e2e --prefix frontend
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-failure-report
           path: |
-            playwright-report/
-            test-results/
+            frontend/playwright-report/
+            frontend/test-results/

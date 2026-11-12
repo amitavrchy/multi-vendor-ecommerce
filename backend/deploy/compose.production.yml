@@ -24,7 +24,7 @@ services:
       interval: 5s
       retries: 10
   api:
-    build: {context: ., target: api}
+    build: {context: .., target: api}
     restart: unless-stopped
     env_file: .env.production
     environment:
@@ -42,7 +42,7 @@ services:
       redis: {condition: service_healthy}
   web:
     build:
-      context: .
+      context: ../../frontend
       target: web
       args:
         API_URL: http://api:4187
@@ -57,7 +57,7 @@ services:
       SITE_HOST: ${SITE_HOST}
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

@@ -6,7 +6,10 @@
     "dev": "next dev --port 3187",
     "build": "next build",
     "start": "next start --port 3187",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src e2e",
+    "format:check": "prettier --check src e2e"
   },
   "dependencies": {
     "next": "^16.0.0",
@@ -19,6 +22,8 @@
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "prettier": "^3.6.2",
+    "@playwright/test": "^1.56.1"
   }
 }

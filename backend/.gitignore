@@ -16,4 +16,4 @@ Thumbs.db
 playwright-report/
 test-results/
 artifacts/
-backend/uploads/
+uploads/

@@ -225,7 +225,7 @@ test('private KYC files stay private while product uploads and variants are publ
       file: {
         name: 'product.jpg',
         mimeType: 'image/jpeg',
-        buffer: readFileSync('frontend/public/products/01.jpg'),
+        buffer: readFileSync('public/products/01.jpg'),
       },
     },
   });

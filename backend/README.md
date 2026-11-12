@@ -1,6 +1,6 @@
 # Bazaar · Multi-vendor marketplace
 
-A Next.js storefront and NestJS commerce API built from [Project_spec.md](Project_spec.md): customer shopping, seller/admin workspaces, transactional checkout, and a PostgreSQL financial ledger.
+A Next.js storefront and NestJS commerce API built from [Project_spec.md](docs/Project_spec.md): customer shopping, seller/admin workspaces, transactional checkout, and a PostgreSQL financial ledger. The repository contains only `frontend/` and `backend/` plus Git metadata. Each application installs and builds independently; shared documentation, infrastructure and deployment assets live in this folder.
 
 ## Start locally
 
@@ -12,7 +12,7 @@ npm run setup
 npm run dev
 ```
 
-Open **http://localhost:3187**. API: **http://localhost:4187/api**. PostgreSQL/Redis bind to loopback ports **55871/56871**. Setup creates ignored environment files with fresh session/encryption keys, applies migrations, and seeds demo data; existing configuration is preserved.
+Run these commands from `backend/`. In another terminal, run `npm ci` and `npm run dev` from `frontend/`. Open **http://localhost:3187**. API: **http://localhost:4187/api**. PostgreSQL/Redis bind to loopback ports **55871/56871**. Setup creates ignored environment files with fresh session/encryption keys, applies migrations, and seeds demo data; existing configuration is preserved.
 
 For a configured database, run `db:generate`, `db:migrate` and `db:seed` separately. `db:push` is for experiments; migrations also install search indexes and inventory/financial constraints.
 
@@ -34,7 +34,10 @@ Seed: 3 verified stores, 30 products, an address, and WELCOME10 (10% off goods a
 ## Working features
 
 - Responsive storefront with minimum 14px text, reduced-motion support, keyboard/modal accessibility and local photography.
-- Full-text search, filters/sort/paging, categories, details, related products and browser-saved wishlists.
+- Full-text search, live suggestions, filters/sort/paging, categories, details and account-synced wishlists with guest merge.
+- Four-product comparison, recorded price history, target-price/restock alerts, followed stores, personalized recommendations and local recently viewed history.
+- Seller analytics: 14/30/90-day Dhaka reporting windows, sales chart, accessible daily table, CSV export, top variants, followers and low-stock inventory.
+- Editorial landing page with shoppable collections, interactive edits, maker story, seller invitation and expandable FAQs.
 - Registration, HTTP-only sessions, role/store scoping, profiles, addresses and notifications.
 - Private KYC/product uploads, admin approval/suspension, team access management, product/variant editing, moderation and inventory.
 - Multi-store bags, coupons, integer BDT totals, split orders, atomic reservations, TTL expiry and idempotent checkout.
@@ -60,11 +63,13 @@ npm test
 npm run test:integration
 npm run build
 npx playwright install chromium
-# Keep npm run dev running in another terminal:
+# From frontend/, with both apps running:
 npm run test:e2e
 npm audit
 ```
 
-Integration tests use a separate **bazaar_test** database and never reset development data. Browser tests create uniquely named demo records on the running development app. Override `E2E_PASSWORD` if you changed the seed password. GitHub Actions uses fresh service containers.
+Integration tests use a separate **bazaar_test** database and never reset development data. Browser tests create uniquely named demo records on the running development app. Override `E2E_PASSWORD` if you changed the seed password. `npm run verify` from backend runs both apps' source and build checks plus database tests.
 
-Production build locally: `npm run build`, then `npm run start -w backend` and `npm run start -w frontend` in separate terminals. `npm run format:check` verifies formatting.
+Production build locally: run `npm run build` and `npm start` separately in each application. `npm run format:check` verifies formatting. Browser screenshots and traces stay under frontend's ignored folders.
+
+GitHub only discovers Actions under a root `.github/workflows` folder. To honor the two-folder layout, the updated workflow is retained as a template under `backend/deploy/github/workflows/ci.yml`; automatic Actions are therefore inactive in this layout. All checks can run locally with `npm run verify` and frontend's `npm run test:e2e`.

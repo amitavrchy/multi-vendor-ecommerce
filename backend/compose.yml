@@ -1,3 +1,4 @@
+name: multi-vendor-ecommerce
 services:
   postgres:
     image: postgres:17-alpine
