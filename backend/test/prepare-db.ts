@@ -3,16 +3,17 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-const url = new URL(process.env.DATABASE_URL!);
-url.pathname = '/bazaar_test';
+import { testDatabaseUrl } from './database';
+const url = testDatabaseUrl();
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
 });
 async function main() {
+  const databaseName = url.pathname.slice(1);
   const exists = await db.$queryRaw<
     { datname: string }[]
-  >`SELECT datname FROM pg_database WHERE datname='bazaar_test'`;
-  if (!exists.length) await db.$executeRawUnsafe('CREATE DATABASE bazaar_test');
+  >`SELECT datname FROM pg_database WHERE datname=${databaseName}`;
+  if (!exists.length) await db.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
   await db.$disconnect();
   const result = spawnSync(
     process.execPath,

@@ -24,8 +24,31 @@ import { DisputesController } from '../src/disputes.controller';
 import { DeliveryService } from '../src/delivery.service';
 import nodemailer from 'nodemailer';
 import { JobsService } from '../src/jobs.service';
-const url = new URL(process.env.DATABASE_URL!);
-url.pathname = '/bazaar_test';
+import { testDatabaseUrl } from './database';
+import { bootstrapAdmin } from '../src/auth/bootstrap';
+import { compare } from 'bcryptjs';
+import { RefundContext, RefundResult, RefundState } from '../src/modules/payments/refund';
+const url = testDatabaseUrl();
+test('production admin bootstrap creates a hashed admin and refuses account takeover', async () => {
+  const email = `bootstrap-${randomUUID()}@bazaar.test`;
+  const admin = await bootstrapAdmin(db, {
+    name: 'Launch Admin',
+    email,
+    password: 'LaunchAdmin2026!',
+  });
+  assert.equal(admin.role, 'PLATFORM_ADMIN');
+  const stored = await db.user.findUniqueOrThrow({ where: { email } });
+  assert.ok(await compare('LaunchAdmin2026!', stored.passwordHash));
+  await db.user.update({ where: { email }, data: { role: 'CUSTOMER' } });
+  await assert.rejects(
+    bootstrapAdmin(db, { name: 'Replacement', email, password: 'ChangedAdmin2026!' }),
+    /already exists/,
+  );
+  assert.equal((await db.user.findUniqueOrThrow({ where: { email } })).role, 'CUSTOMER');
+  await assert.rejects(
+    bootstrapAdmin(db, { name: 'Launch Admin', email: `long-${email}`, password: '界'.repeat(25) }),
+  );
+});
 const db = new Db({ datasourceUrl: url.toString() });
 class FakeProvider implements PaymentProvider {
   code = 'FAKE';
@@ -550,4 +573,194 @@ test('maintenance expires reservations, queues delayed review requests and prepa
     if (previous) await db.platformPolicy.update({ where: { id: 'marketplace' }, data: previous });
     else await db.platformPolicy.delete({ where: { id: 'marketplace' } });
   }
+});
+
+class AsyncRefundProvider extends FakeProvider {
+  code = `ASYNC_${randomUUID()}`;
+  refundRetrySafe = true;
+  starts = 0;
+  checks = 0;
+  startFailure?: Error;
+  checkHook?: (ref: string, context: RefundContext) => Promise<RefundResult>;
+  state: RefundState = 'PROCESSING';
+  async refund(_ref: string, _amount: number, key: string) {
+    this.starts++;
+    if (this.startFailure) throw this.startFailure;
+    return { providerRef: `refund_${key}`, status: this.state };
+  }
+  async checkRefund(ref: string, context: RefundContext): Promise<RefundResult> {
+    this.checks++;
+    if (this.checkHook) return this.checkHook(ref, context);
+    return { providerRef: ref, status: this.state };
+  }
+}
+async function refundFixture(adapter: AsyncRefundProvider) {
+  registry.register(adapter);
+  const f = await fixture();
+  const r = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: adapter.code },
+    randomUUID(),
+  );
+  const payment = await db.payment.findUniqueOrThrow({ where: { orderId: r.orderId } });
+  await webhook.receive(adapter.code, {}, {
+    body: {
+      eventId: randomUUID(),
+      providerRef: r.orderId,
+      status: 'SUCCEEDED',
+      amountMinor: payment.amountMinor,
+    },
+    rawBody: Buffer.alloc(0),
+  } as never);
+  const vo = await db.vendorOrder.findFirstOrThrow({
+      where: { orderId: r.orderId },
+      include: { lines: true },
+    }),
+    admin = { ...f.user, role: 'PLATFORM_ADMIN' };
+  await orders.transition(admin, vo.id, 'PROCESSING');
+  await orders.transition(admin, vo.id, 'SHIPPED', 'REFUND-CONTRACT');
+  await orders.transition(admin, vo.id, 'DELIVERED');
+  const rma = await returns.request(f.user, {
+    vendorOrderId: vo.id,
+    reason: 'The delivered item needs to be returned for a refund',
+  });
+  await returns.review(rma.id, { status: 'APPROVED' });
+  await returns.review(rma.id, { status: 'ITEM_RECEIVED' });
+  const refund = await db.refund.findUniqueOrThrow({ where: { returnRequestId: rma.id } });
+  return { f, vo, rma, refund, payment };
+}
+test('asynchronous refunds leave balances and stock untouched until verified settlement', async () => {
+  const adapter = new AsyncRefundProvider(),
+    f = await refundFixture(adapter);
+  await refunds.process(f.refund.id);
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'PROCESSING',
+  );
+  assert.equal(
+    (await db.payment.findUniqueOrThrow({ where: { id: f.payment.id } })).refundedMinor,
+    0,
+  );
+  assert.equal(
+    (await db.vendorBalance.findUniqueOrThrow({ where: { vendorId: f.vo.vendorId } }))
+      .availableMinor,
+    f.vo.vendorNetMinor,
+  );
+  await refunds.process(f.refund.id);
+  assert.equal(adapter.checks, 0);
+  adapter.state = 'SUCCEEDED';
+  await refunds.process(f.refund.id, true);
+  await refunds.process(f.refund.id, true);
+  assert.equal(adapter.starts, 1);
+  assert.equal(adapter.checks, 1);
+  assert.equal(
+    (await db.returnRequest.findUniqueOrThrow({ where: { id: f.rma.id } })).status,
+    'REFUNDED',
+  );
+  assert.equal(
+    (await db.productVariant.findUniqueOrThrow({ where: { id: f.vo.lines[0].variantId } }))
+      .stockQty,
+    5,
+  );
+  assert.equal(await db.vendorLedgerEntry.count({ where: { refId: `refund:${f.refund.id}` } }), 1);
+});
+test('two workers cannot initiate the same refund while its lease is active', async () => {
+  const adapter = new AsyncRefundProvider(),
+    f = await refundFixture(adapter);
+  await Promise.all([refunds.process(f.refund.id), refunds.process(f.refund.id)]);
+  assert.equal(adapter.starts, 1);
+  const row = await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } });
+  assert.equal(row.status, 'PROCESSING');
+  assert.equal(row.leaseToken, null);
+  assert.equal(row.leaseUntil, null);
+});
+test('a stale failed poll cannot overwrite a newer worker settlement', async () => {
+  const adapter = new AsyncRefundProvider(),
+    f = await refundFixture(adapter);
+  await refunds.process(f.refund.id);
+  let started!: () => void, rejectOld!: (reason: Error) => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const oldPoll = new Promise<RefundResult>((_resolve, reject) => {
+    rejectOld = reject;
+  });
+  adapter.checkHook = async (ref) => {
+    if (adapter.checks === 1) {
+      started();
+      return oldPoll;
+    }
+    return { providerRef: ref, status: 'SUCCEEDED' };
+  };
+  const first = refunds.process(f.refund.id, true);
+  await ready;
+  await db.refund.update({
+    where: { id: f.refund.id },
+    data: { leaseUntil: new Date(Date.now() - 1000) },
+  });
+  await refunds.process(f.refund.id, true);
+  rejectOld(new Error('Late transport failure from the old worker'));
+  await first;
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'SUCCEEDED',
+  );
+  assert.equal(await db.vendorLedgerEntry.count({ where: { refId: `refund:${f.refund.id}` } }), 1);
+});
+test('uncertain non-idempotent submissions are never automatically initiated again', async () => {
+  const adapter = new AsyncRefundProvider();
+  adapter.refundRetrySafe = false;
+  adapter.startFailure = new Error('Gateway timed out after submission');
+  const f = await refundFixture(adapter);
+  await refunds.process(f.refund.id);
+  await refunds.process(f.refund.id, true);
+  assert.equal(adapter.starts, 1);
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'MANUAL_REVIEW',
+  );
+  assert.equal(
+    (await db.payment.findUniqueOrThrow({ where: { id: f.payment.id } })).refundedMinor,
+    0,
+  );
+  await returns.confirm(f.refund.id, { transferReference: 'EXTERNALLY-VERIFIED-TRANSFER' });
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'SUCCEEDED',
+  );
+});
+test('failed gateway refunds require an explicit manual review before external-transfer confirmation', async () => {
+  const adapter = new AsyncRefundProvider();
+  adapter.state = 'FAILED';
+  const f = await refundFixture(adapter);
+  await refunds.process(f.refund.id);
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'FAILED',
+  );
+  await assert.rejects(() =>
+    returns.confirm(f.refund.id, { transferReference: 'NOT-YET-REVIEWED' }),
+  );
+  await returns.manual(f.refund.id, {
+    reason: 'The gateway failed; customer bank transfer was arranged by the operator.',
+  });
+  await returns.confirm(f.refund.id, { transferReference: 'MANUAL-TRANSFER-VERIFIED' });
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'SUCCEEDED',
+  );
+});
+test('expired idempotency windows do not reinitiate uncertain refunds', async () => {
+  const adapter = new AsyncRefundProvider(),
+    f = await refundFixture(adapter);
+  await db.refund.update({
+    where: { id: f.refund.id },
+    data: { attempts: 1, createdAt: new Date(Date.now() - 48 * 3600000) },
+  });
+  await refunds.process(f.refund.id, true);
+  assert.equal(adapter.starts, 0);
+  assert.equal(
+    (await db.refund.findUniqueOrThrow({ where: { id: f.refund.id } })).status,
+    'MANUAL_REVIEW',
+  );
 });
