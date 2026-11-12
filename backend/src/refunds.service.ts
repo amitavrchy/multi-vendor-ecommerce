@@ -5,6 +5,7 @@ import { RefundContext } from './modules/payments/refund';
 import { PaymentProvider } from './modules/payments/provider';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { reconcileRewards } from './rewards.controller';
 @Injectable()
 export class RefundsService {
   constructor(
@@ -199,6 +200,7 @@ export class RefundsService {
         )
           await tx.order.update({ where: { id: vo.orderId }, data: { status: 'RETURNED' } });
       }
+      await reconcileRewards(tx, vo.orderId, `refund:${id}`);
       await tx.outboxEvent.create({
         data: {
           type: 'REFUND_COMPLETED',

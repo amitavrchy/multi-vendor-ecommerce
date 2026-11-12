@@ -4,6 +4,7 @@ import { Db } from './db';
 import { Actor, Principal } from './auth/access';
 import { input } from './common/input';
 import { couponDiscount, SHIPPING_MINOR } from './common/money';
+import { purchaseItems, checkoutCoupon } from './commerce-pricing';
 @Controller('cart')
 export class CartController {
   constructor(private db: Db) {}
@@ -30,7 +31,7 @@ export class CartController {
   }
   @Post('items') async set(@Actor() u: Principal, @Body() body: unknown) {
     const d = input(
-      z.object({ variantId: z.string(), qty: z.number().int().min(1).max(99) }),
+      z.object({ variantId: z.string(), qty: z.number().int().min(1).max(999) }),
       body,
     );
     const variant = await this.db.productVariant.findUnique({
@@ -62,14 +63,10 @@ export class CartController {
   }
   @Post('quote') async quote(@Actor() u: Principal, @Body() b: unknown) {
     const { code } = input(z.object({ code: z.string().max(40).optional() }), b);
-    const cart = await this.get(u);
+    const cart = { items: await this.db.atomic((tx) => purchaseItems(tx, u.id)) };
     const goodsMinor = cart.items.reduce((s, i) => s + i.qty * i.variant.priceMinor, 0);
     const vendors = new Set(cart.items.map((i) => i.variant.product.vendorId));
-    const coupon = code
-      ? await this.db.coupon.findFirst({
-          where: { code: code.toUpperCase(), active: true, expiresAt: { gt: new Date() } },
-        })
-      : null;
+    const coupon = await this.db.atomic((tx) => checkoutCoupon(tx, u.id, code, goodsMinor));
     if (code && (!coupon || goodsMinor < coupon.minGoodsMinor))
       throw new BadRequestException('Coupon is invalid or minimum spend has not been met');
     const discountMinor = coupon ? couponDiscount(goodsMinor, coupon) : 0;

@@ -3,6 +3,7 @@ import { Db } from './db';
 import { Principal } from './auth/access';
 import { fulfillment, masterStatus } from './common/states';
 import { VendorScope } from './vendor-scope.service';
+import { reconcileRewards } from './rewards.controller';
 @Injectable()
 export class OrdersService {
   constructor(
@@ -55,6 +56,7 @@ export class OrdersService {
       await tx.order.update({ where: { id: vo.orderId }, data: { status: state } });
       if (state === 'FULFILLED' && vo.order.payment?.status === 'COD_PENDING')
         await tx.payment.update({ where: { orderId: vo.orderId }, data: { status: 'SUCCEEDED' } });
+      await reconcileRewards(tx, vo.orderId, `delivery:${id}`);
       await tx.outboxEvent.create({
         data: {
           type: 'ORDER_STATUS_CHANGED',

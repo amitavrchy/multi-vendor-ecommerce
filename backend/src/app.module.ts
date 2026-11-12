@@ -34,6 +34,10 @@ import { CacheInvalidation } from './cache.interceptor';
 import { HealthController } from './health.controller';
 import { DiscoveryController } from './discovery.controller';
 import { AnalyticsController } from './analytics.controller';
+import { BusinessController } from './business.controller';
+import { SubscriptionsController } from './subscriptions.controller';
+import { RewardsController } from './rewards.controller';
+import { MarketingController } from './marketing.controller';
 @Module({
   imports: [
     JwtModule.register({
@@ -43,6 +47,10 @@ import { AnalyticsController } from './analytics.controller';
     }),
   ],
   controllers: [
+    BusinessController,
+    SubscriptionsController,
+    RewardsController,
+    MarketingController,
     DiscoveryController,
     AnalyticsController,
     HealthController,

@@ -11,6 +11,8 @@ import { CacheService } from './cache.service';
 import { ProviderRegistry } from './modules/payments/registry';
 import { WebhookController } from './modules/payments/webhook.controller';
 import { ShoppingAlertsService } from './shopping-alerts.service';
+import { prepareRenewals } from './subscriptions.controller';
+import { prepareCampaigns } from './marketing.controller';
 @Injectable()
 export class JobsService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
@@ -57,6 +59,8 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
+      await prepareRenewals(this.db);
+      await prepareCampaigns(this.db);
       await new ShoppingAlertsService(this.db).check();
       await this.refunds.reconcileDue();
       const pendingPayments = await this.db.payment.findMany({
@@ -139,7 +143,32 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
           const p = event.payload as Record<string, string>;
           if (event.type === 'CACHE_INVALIDATION') await this.cache.purge();
           else if (event.type === 'REFUND_REQUESTED') await this.refunds.process(p.refundId);
-          else if (event.type === 'SHOPPING_ALERT') {
+          else if (['MARKETING_CONFIRMATION', 'MARKETING_MESSAGE'].includes(event.type)) {
+            const subscriber = await this.db.marketingSubscriber.findUnique({
+              where: { id: p.subscriberId },
+            });
+            const campaign = event.campaignId
+              ? await this.db.campaign.findUnique({ where: { id: event.campaignId } })
+              : null;
+            const allowed =
+              event.type === 'MARKETING_MESSAGE'
+                ? subscriber?.status === 'CONFIRMED' &&
+                  !!campaign &&
+                  campaign.status !== 'CANCELLED'
+                : subscriber?.status === 'PENDING' &&
+                  !!subscriber.confirmationExpiresAt &&
+                  subscriber.confirmationExpiresAt > new Date();
+            if (allowed && !process.env.SMTP_URL)
+              throw new Error(
+                'Email delivery is not configured; campaign remains queued for retry',
+              );
+            if (allowed)
+              await this.delivery.deliver(event.id, {
+                email: p.email,
+                subject: `Bazaar · ${p.title}`,
+                text: `${p.body}\n\n${event.type === 'MARKETING_MESSAGE' ? 'Unsubscribe:' : 'Confirm subscription:'} ${config.APP_URL}${p.path}`,
+              });
+          } else if (['SHOPPING_ALERT', 'ACCOUNT_NOTICE'].includes(event.type)) {
             await this.db.notification.upsert({
               where: { eventId: event.id },
               create: { eventId: event.id, userId: p.userId, title: p.title, body: p.body },

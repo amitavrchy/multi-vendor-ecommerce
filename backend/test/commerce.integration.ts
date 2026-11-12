@@ -31,6 +31,11 @@ import { DiscoveryController } from '../src/discovery.controller';
 import { ShoppingAlertsService } from '../src/shopping-alerts.service';
 import { AnalyticsController } from '../src/analytics.controller';
 import { VendorCatalogController } from '../src/vendor-catalog.controller';
+import { BusinessController } from '../src/business.controller';
+import { SubscriptionsController, prepareRenewals } from '../src/subscriptions.controller';
+import { RewardsController } from '../src/rewards.controller';
+import { MarketingController, prepareCampaigns } from '../src/marketing.controller';
+import { decrypt } from '../src/common/security';
 import { RefundContext, RefundResult, RefundState } from '../src/modules/payments/refund';
 const url = testDatabaseUrl();
 test('production admin bootstrap creates a hashed admin and refuses account takeover', async () => {
@@ -911,4 +916,374 @@ test('seller analytics scope sales and ledger earnings to the owning store', asy
   );
   await assert.rejects(report.report(f.user, 14));
   await assert.rejects(report.report(f.owner, 365));
+});
+
+async function approveBusiness(f: Awaited<ReturnType<typeof fixture>>) {
+  const business = new BusinessController(db, scope);
+  await business.apply(f.user, {
+    legalName: 'Contract Buying Ltd',
+    registrationNumber: 'BIZ-2026-TEST',
+    billingAddress: 'Dhaka business district, road 12',
+  });
+  await business.review(f.user.id, {
+    status: 'APPROVED',
+    reviewNote: 'Contract business verified',
+  });
+  return business;
+}
+test('wholesale tiers apply only to approved buyers and match checkout snapshots', async () => {
+  const f = await fixture(50),
+    business = await approveBusiness(f),
+    owned = await scope.get(f.owner, true),
+    v = f.vendors.find((v) => v.id === owned.id)!.products[0].variants[0];
+  await business.setTiers(f.owner, v.id, {
+    tiers: [
+      { minQty: 3, unitPriceMinor: 8000 },
+      { minQty: 10, unitPriceMinor: 7000 },
+    ],
+  });
+  await db.cartItem.updateMany({ where: { cartId: f.cart.id, variantId: v.id }, data: { qty: 3 } });
+  const preview = await checkout.preview(f.user, {});
+  assert.equal(preview.items.find((i) => i.variantId === v.id)!.variant.priceMinor, 8000);
+  await db.businessProfile.update({ where: { userId: f.user.id }, data: { status: 'REJECTED' } });
+  assert.equal(
+    (await checkout.preview(f.user, {})).items.find((i) => i.variantId === v.id)!.variant
+      .priceMinor,
+    v.priceMinor,
+  );
+  await business.review(f.user.id, { status: 'APPROVED', reviewNote: 'Verified once more' });
+  const placed = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE' },
+    randomUUID(),
+  );
+  assert.equal(
+    (
+      await db.orderLine.findFirstOrThrow({
+        where: { vendorOrder: { orderId: placed.orderId }, variantId: v.id },
+      })
+    ).unitPriceMinor,
+    8000,
+  );
+  await assert.rejects(business.setTiers((await fixture()).owner, v.id, { tiers: [] }));
+  await assert.rejects(
+    business.setTiers(f.owner, v.id, {
+      tiers: [
+        { minQty: 3, unitPriceMinor: 8000 },
+        { minQty: 10, unitPriceMinor: 9000 },
+      ],
+    }),
+  );
+});
+test('negotiated quotes are private, single-use, expire and preserve the ordinary bag', async () => {
+  const f = await fixture(50),
+    other = await fixture(),
+    business = await approveBusiness(f),
+    owned = await scope.get(f.owner, true),
+    v = f.vendors.find((v) => v.id === owned.id)!.products[0].variants[0];
+  const q = await business.request(f.user, {
+    variantId: v.id,
+    qty: 5,
+    note: 'Please quote for our office procurement',
+  });
+  await assert.rejects(
+    business.offer(other.owner, q.id, {
+      unitPriceMinor: 7000,
+      expiresDays: 7,
+      sellerNote: 'Unauthorized offer',
+    }),
+  );
+  await business.offer(f.owner, q.id, {
+    unitPriceMinor: 7000,
+    expiresDays: 7,
+    sellerNote: 'Five units with standard delivery',
+  });
+  await assert.rejects(business.decide(other.user, q.id, { accept: true }));
+  await db.quoteRequest.update({ where: { id: q.id }, data: { expiresAt: new Date(0) } });
+  await assert.rejects(business.decide(f.user, q.id, { accept: true }));
+  await business.offer(f.owner, q.id, {
+    unitPriceMinor: 7000,
+    expiresDays: 7,
+    sellerNote: 'Refreshed valid business offer',
+  });
+  await business.decide(f.user, q.id, { accept: true });
+  await assert.rejects(checkout.preview(other.user, { quoteId: q.id }));
+  const placed = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', quoteId: q.id },
+    randomUUID(),
+  );
+  const replay = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', quoteId: q.id },
+    randomUUID(),
+  );
+  assert.equal(replay.orderId, placed.orderId);
+  await pay(placed.orderId);
+  assert.equal(await db.cartItem.count({ where: { cartId: f.cart.id } }), 2);
+  const snapshot = await db.order.findUniqueOrThrow({
+    where: { id: placed.orderId },
+    include: { vendorOrders: { include: { lines: true } } },
+  });
+  assert.equal(snapshot.goodsMinor, 35000);
+  assert.equal(snapshot.sourceKind, 'QUOTE');
+  assert.equal(snapshot.vendorOrders.length, 1);
+  assert.equal(snapshot.vendorOrders[0].lines[0].qty, 5);
+  await assert.rejects(
+    business.offer(f.owner, q.id, {
+      unitPriceMinor: 6000,
+      expiresDays: 7,
+      sellerNote: 'Cannot alter an accepted order',
+    }),
+  );
+});
+test('replenishment cycles are concurrent-safe, require checkout approval and release failed orders', async () => {
+  const f = await fixture(50),
+    subscriptions = new SubscriptionsController(db),
+    v = f.vendors[0].products[0].variants[0];
+  const s = await subscriptions.create(f.user, {
+    variantId: v.id,
+    qty: 2,
+    intervalDays: 30,
+    startNow: true,
+  });
+  await Promise.all([prepareRenewals(db), prepareRenewals(db)]);
+  const renewal = await db.subscriptionRenewal.findFirstOrThrow({
+    where: { subscriptionId: s.id },
+  });
+  assert.equal(await db.subscriptionRenewal.count({ where: { subscriptionId: s.id } }), 1);
+  assert.equal(await db.order.count({ where: { userId: f.user.id } }), 0);
+  const placed = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', renewalId: renewal.id },
+    randomUUID(),
+  );
+  await checkout.cancelPending(placed.orderId);
+  assert.equal(
+    (await db.subscriptionRenewal.findUniqueOrThrow({ where: { id: renewal.id } })).status,
+    'DUE',
+  );
+  const again = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', renewalId: renewal.id },
+    randomUUID(),
+  );
+  assert.notEqual(again.orderId, placed.orderId);
+  await pay(again.orderId);
+  assert.equal(await db.cartItem.count({ where: { cartId: f.cart.id } }), 2);
+  const stranger = (await fixture()).user;
+  await assert.rejects(subscriptions.change(stranger, s.id, { status: 'CANCELLED' }));
+  await subscriptions.change(f.user, s.id, { status: 'PAUSED' });
+  await db.subscription.update({ where: { id: s.id }, data: { nextAt: new Date(0) } });
+  await prepareRenewals(db);
+  assert.equal(await db.subscriptionRenewal.count({ where: { subscriptionId: s.id } }), 1);
+  await subscriptions.change(f.user, s.id, { status: 'CANCELLED' });
+  await assert.rejects(subscriptions.change(f.user, s.id, { status: 'ACTIVE' }));
+});
+test('loyalty redemption prevents concurrent overspending and vouchers are private and single-use', async () => {
+  const f = await fixture(),
+    other = await fixture(),
+    rewards = new RewardsController(db);
+  await db.rewardEntry.create({
+    data: { userId: f.user.id, points: 100, type: 'CONTRACT_CREDIT', ref: randomUUID() },
+  });
+  const result = await Promise.allSettled([rewards.redeem(f.user), rewards.redeem(f.user)]);
+  assert.equal(result.filter((r) => r.status === 'fulfilled').length, 1);
+  const voucher = await db.coupon.findFirstOrThrow({ where: { ownerId: f.user.id } });
+  await assert.rejects(checkout.preview(other.user, { couponCode: voucher.code }));
+  const first = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', couponCode: voucher.code },
+    randomUUID(),
+  );
+  await assert.rejects(checkout.preview(f.user, { couponCode: voucher.code }));
+  await checkout.cancelPending(first.orderId);
+  assert.equal((await checkout.preview(f.user, { couponCode: voucher.code })).discountMinor, 10000);
+  const second = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE', couponCode: voucher.code },
+    randomUUID(),
+  );
+  await pay(second.orderId);
+  assert.equal((await rewards.summary(f.user)).points, 0);
+  assert.equal((await rewards.summary(f.user)).coupons.length, 0);
+});
+test('delivery earns loyalty and referral rewards once, and returns claw both back', async () => {
+  const f = await fixture(),
+    friend = await fixture(),
+    rewards = new RewardsController(db),
+    code = (await rewards.summary(friend.user)).referralCode;
+  await assert.rejects(rewards.claim(friend.user, { code }));
+  await rewards.claim(f.user, { code });
+  await assert.rejects(rewards.claim(f.user, { code }));
+  for (let i = 0; i < 2; i++)
+    await db.productVariant.update({
+      where: { id: f.vendors[i].products[0].variants[0].id },
+      data: { priceMinor: 50000 + i * 10000 },
+    });
+  const order = await checkout.start(
+    f.user,
+    { addressId: f.address.id, provider: 'FAKE' },
+    randomUUID(),
+  );
+  await pay(order.orderId);
+  assert.equal((await rewards.summary(f.user)).points, 0);
+  const shipments = await db.vendorOrder.findMany({ where: { orderId: order.orderId } }),
+    admin = { ...f.user, role: 'PLATFORM_ADMIN' };
+  for (const vo of shipments) {
+    await orders.transition(admin, vo.id, 'PROCESSING');
+    await orders.transition(admin, vo.id, 'SHIPPED', 'GROWTH-TEST');
+    await orders.transition(admin, vo.id, 'DELIVERED');
+    await orders.transition(admin, vo.id, 'DELIVERED');
+  }
+  assert.equal((await rewards.summary(f.user)).points, 111);
+  assert.equal((await rewards.summary(friend.user)).points, 100);
+  const redeemed = await rewards.redeem(friend.user);
+  const returned = await returns.request(f.user, {
+    vendorOrderId: shipments[0].id,
+    reason: 'The item needs a complete return',
+  });
+  await returns.review(returned.id, { status: 'APPROVED' });
+  await returns.review(returned.id, { status: 'ITEM_RECEIVED' });
+  const refund = await db.refund.findUniqueOrThrow({ where: { returnRequestId: returned.id } });
+  await refunds.process(refund.id, true);
+  await refunds.process(refund.id, true);
+  assert.equal((await rewards.summary(friend.user)).points, -100);
+  await assert.rejects(checkout.preview(friend.user, { couponCode: redeemed.code }));
+  assert.ok((await rewards.summary(f.user)).points <= 6);
+  assert.equal(
+    (await db.referral.findUniqueOrThrow({ where: { inviteeId: f.user.id } })).status,
+    'REVERSED',
+  );
+});
+test('marketing requires explicit double opt-in and campaign preparation is idempotent', async () => {
+  const original = process.env.SMTP_URL;
+  process.env.SMTP_URL = 'smtp://contract.test';
+  try {
+    const marketing = new MarketingController(db),
+      email = `marketing-${randomUUID()}@test.local`;
+    await assert.rejects(marketing.subscribe({ email, consent: false }));
+    await marketing.subscribe({ email, consent: true });
+    const subscriber = await db.marketingSubscriber.findUniqueOrThrow({ where: { email } }),
+      token = decrypt(subscriber.tokenCipher, config.BANK_ENCRYPTION_KEY);
+    const pending = await marketing.create({
+      title: 'Contract campaign',
+      body: 'A thoughtful selection for confirmed subscribers only.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(pending.id, {});
+    await prepareCampaigns(db);
+    assert.equal(
+      await db.outboxEvent.count({ where: { id: `campaign:${pending.id}:${subscriber.id}` } }),
+      0,
+    );
+    await marketing.confirm({ token });
+    await marketing.confirm({ token });
+    const campaign = await marketing.create({
+      title: 'Confirmed contract campaign',
+      body: 'A thoughtful selection for confirmed subscribers only.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(campaign.id, {});
+    await Promise.all([prepareCampaigns(db), prepareCampaigns(db)]);
+    assert.equal(
+      await db.outboxEvent.count({ where: { id: `campaign:${campaign.id}:${subscriber.id}` } }),
+      1,
+    );
+    await marketing.unsubscribe({ token });
+    await assert.rejects(marketing.confirm({ token }));
+    const later = await marketing.create({
+      title: 'Suppressed contract campaign',
+      body: 'Unsubscribed addresses must not receive this message.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(later.id, {});
+    await prepareCampaigns(db);
+    assert.equal(
+      await db.outboxEvent.count({ where: { id: `campaign:${later.id}:${subscriber.id}` } }),
+      0,
+    );
+    await marketing.cancel(campaign.id);
+    assert.equal(
+      (await db.campaign.findUniqueOrThrow({ where: { id: campaign.id } })).status,
+      'CANCELLED',
+    );
+  } finally {
+    if (original === undefined) delete process.env.SMTP_URL;
+    else process.env.SMTP_URL = original;
+  }
+});
+
+test('campaign delivery rechecks unsubscribe and cancellation after messages were queued', async () => {
+  const original = process.env.SMTP_URL;
+  process.env.SMTP_URL = 'smtp://contract.test';
+  try {
+    await db.outboxEvent.updateMany({
+      where: { processedAt: null },
+      data: { processedAt: new Date() },
+    });
+    const marketing = new MarketingController(db),
+      email = `dispatch-${randomUUID()}@test.local`;
+    await marketing.subscribe({ email, consent: true });
+    const subscriber = await db.marketingSubscriber.findUniqueOrThrow({ where: { email } }),
+      token = decrypt(subscriber.tokenCipher, config.BANK_ENCRYPTION_KEY);
+    await marketing.confirm({ token });
+    const deliveries: string[] = [];
+    const jobs = new JobsService(
+      db,
+      checkout,
+      refunds,
+      { notify() {} } as never,
+      {
+        deliver: async (_id: string, data: { subject: string; email: string }) => {
+          if (data.email === email) deliveries.push(data.subject);
+        },
+      } as never,
+      { invalidate: async () => {}, purge: async () => {} } as never,
+      registry,
+    );
+    const c = await marketing.create({
+      title: `Unsubscribe ${randomUUID()}`,
+      body: 'Do not deliver after consent has been withdrawn.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(c.id, {});
+    await prepareCampaigns(db);
+    await marketing.unsubscribe({ token });
+    await jobs.tick();
+    assert.equal(deliveries.includes(`Bazaar · ${c.title}`), false);
+    assert.ok(
+      (
+        await db.outboxEvent.findUniqueOrThrow({
+          where: { id: `campaign:${c.id}:${subscriber.id}` },
+        })
+      ).processedAt,
+    );
+    await marketing.subscribe({ email, consent: true });
+    await marketing.confirm({ token });
+    const cancelled = await marketing.create({
+      title: `Cancelled ${randomUUID()}`,
+      body: 'Do not deliver after an administrator cancels a queued campaign.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(cancelled.id, {});
+    await prepareCampaigns(db);
+    await marketing.cancel(cancelled.id);
+    await jobs.tick();
+    assert.equal(deliveries.includes(`Bazaar · ${cancelled.title}`), false);
+    const allowed = await marketing.create({
+      title: `Allowed ${randomUUID()}`,
+      body: 'This confirmed subscriber should receive the queued message.',
+      audience: 'ALL',
+    });
+    await marketing.schedule(allowed.id, {});
+    await prepareCampaigns(db);
+    await jobs.tick();
+    assert.equal(deliveries.filter((s) => s === `Bazaar · ${allowed.title}`).length, 1);
+    await jobs.tick();
+    assert.equal(deliveries.filter((s) => s === `Bazaar · ${allowed.title}`).length, 1);
+  } finally {
+    if (original === undefined) delete process.env.SMTP_URL;
+    else process.env.SMTP_URL = original;
+  }
 });

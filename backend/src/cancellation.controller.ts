@@ -12,6 +12,7 @@ import { Actor, Principal } from './auth/access';
 import { input } from './common/input';
 import { masterStatus } from './common/states';
 import { VendorScope } from './vendor-scope.service';
+import { reconcileRewards } from './rewards.controller';
 @Controller('vendor-orders')
 export class CancellationController {
   constructor(
@@ -66,8 +67,16 @@ export class CancellationController {
       const all = await tx.vendorOrder.findMany({ where: { orderId: vo.orderId } });
       const status = masterStatus(all.map((v) => v.status));
       await tx.order.update({ where: { id: vo.orderId }, data: { status } });
+      if (status === 'CANCELLED')
+        await tx.coupon.updateMany({
+          where: { claimedOrderId: vo.orderId, singleUse: true },
+          data: { claimedOrderId: null },
+        });
       if (status === 'CANCELLED' && payment.status === 'COD_PENDING')
         await tx.payment.update({ where: { id: payment.id }, data: { status: 'CANCELLED' } });
+      if (status === 'FULFILLED' && payment.status === 'COD_PENDING')
+        await tx.payment.update({ where: { id: payment.id }, data: { status: 'SUCCEEDED' } });
+      await reconcileRewards(tx, vo.orderId, `cancellation:${id}`);
       await tx.outboxEvent.create({
         data: {
           type: 'ORDER_STATUS_CHANGED',

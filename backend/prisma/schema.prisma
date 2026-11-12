@@ -5,6 +5,15 @@ datasource db {
   provider = "postgresql"
 }
 model User {
+  business BusinessProfile?
+  quotes QuoteRequest[]
+  subscriptions Subscription[]
+  rewardEntries RewardEntry[]
+  referralProfile ReferralProfile?
+  referrals Referral[] @relation("Referrer")
+  referredBy Referral? @relation("Invitee")
+  rewardCoupons Coupon[]
+  marketingSubscriptions MarketingSubscriber[]
   savedProducts SavedProduct[]
   productAlerts ProductAlert[]
   followedStores StoreFollow[]
@@ -95,6 +104,9 @@ model Product {
   @@index([categoryId, status])
 }
 model ProductVariant {
+  wholesaleTiers WholesaleTier[]
+  quoteRequests QuoteRequest[]
+  subscriptions Subscription[]
   alerts ProductAlert[]
   pricePoints PricePoint[]
   id String @id @default(cuid())
@@ -126,6 +138,11 @@ model CartItem {
   @@unique([cartId, variantId])
 }
 model Coupon {
+  ownerId String?
+  owner User? @relation(fields:[ownerId],references:[id],onDelete:Cascade)
+  singleUse Boolean @default(false)
+  claimedOrderId String? @unique
+  claimedOrder Order? @relation(fields:[claimedOrderId],references:[id],onDelete:SetNull)
   funding String @default("PLATFORM")
   code String @id
   percent Int
@@ -135,6 +152,13 @@ model Coupon {
   active Boolean @default(true)
 }
 model Order {
+  sourceKind String @default("CART")
+  sourceRef String? @unique
+  sourceQuote QuoteRequest?
+  sourceRenewal SubscriptionRenewal?
+  claimedCoupons Coupon[]
+  rewardEntries RewardEntry[]
+  qualifyingReferral Referral?
   id String @id @default(cuid())
   userId String
   user User @relation(fields: [userId], references: [id])
@@ -350,6 +374,8 @@ model PayoutItem {
   amountMinor Int
 }
 model OutboxEvent {
+  campaignId String?
+  campaign Campaign? @relation(fields:[campaignId],references:[id],onDelete:SetNull)
   receipts DeliveryReceipt[]
   id String @id @default(cuid())
   type String
@@ -359,6 +385,7 @@ model OutboxEvent {
   attempts Int @default(0)
   lastError String?
   @@index([processedAt, createdAt])
+  @@index([campaignId])
 }
 model WebhookEvent {
   id String @id @default(cuid())
@@ -418,4 +445,119 @@ model PricePoint {
   priceMinor Int
   recordedAt DateTime @default(now())
   @@index([variantId, recordedAt])
+}
+
+model BusinessProfile {
+  userId String @id
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  legalName String
+  registrationNumber String
+  billingAddress String
+  status String @default("PENDING")
+  reviewNote String?
+  createdAt DateTime @default(now())
+}
+model WholesaleTier {
+  id String @id @default(cuid())
+  variantId String
+  variant ProductVariant @relation(fields:[variantId],references:[id],onDelete:Cascade)
+  minQty Int
+  unitPriceMinor Int
+  @@unique([variantId,minQty])
+}
+model QuoteRequest {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  variantId String
+  variant ProductVariant @relation(fields:[variantId],references:[id])
+  qty Int
+  note String
+  status String @default("REQUESTED")
+  unitPriceMinor Int?
+  sellerNote String?
+  expiresAt DateTime?
+  orderId String? @unique
+  order Order? @relation(fields:[orderId],references:[id],onDelete:SetNull)
+  createdAt DateTime @default(now())
+  @@index([userId,status])
+}
+model Subscription {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  variantId String
+  variant ProductVariant @relation(fields:[variantId],references:[id])
+  qty Int
+  intervalDays Int
+  status String @default("ACTIVE")
+  nextAt DateTime
+  cycle Int @default(0)
+  renewals SubscriptionRenewal[]
+  createdAt DateTime @default(now())
+  @@index([status,nextAt])
+}
+model SubscriptionRenewal {
+  id String @id @default(cuid())
+  subscriptionId String
+  subscription Subscription @relation(fields:[subscriptionId],references:[id],onDelete:Cascade)
+  cycle Int
+  dueAt DateTime
+  status String @default("DUE")
+  orderId String? @unique
+  order Order? @relation(fields:[orderId],references:[id],onDelete:SetNull)
+  @@unique([subscriptionId,cycle])
+}
+model RewardEntry {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  orderId String?
+  order Order? @relation(fields:[orderId],references:[id],onDelete:SetNull)
+  points Int
+  type String
+  ref String @unique
+  createdAt DateTime @default(now())
+  @@index([userId,createdAt])
+}
+model ReferralProfile {
+  userId String @id
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  code String @unique
+}
+model Referral {
+  id String @id @default(cuid())
+  referrerId String
+  referrer User @relation("Referrer",fields:[referrerId],references:[id])
+  inviteeId String @unique
+  invitee User @relation("Invitee",fields:[inviteeId],references:[id])
+  status String @default("CLAIMED")
+  orderId String? @unique
+  order Order? @relation(fields:[orderId],references:[id],onDelete:SetNull)
+  createdAt DateTime @default(now())
+}
+model MarketingSubscriber {
+  id String @id @default(cuid())
+  email String @unique
+  userId String?
+  user User? @relation(fields:[userId],references:[id],onDelete:SetNull)
+  status String @default("PENDING")
+  tokenHash String @unique
+  tokenCipher String
+  confirmationExpiresAt DateTime?
+  consentAt DateTime @default(now())
+  confirmedAt DateTime?
+  @@index([status,id])
+}
+model Campaign {
+  id String @id @default(cuid())
+  title String
+  body String
+  audience String @default("ALL")
+  status String @default("DRAFT")
+  scheduledAt DateTime?
+  cursor String?
+  events OutboxEvent[]
+  createdAt DateTime @default(now())
+  @@index([status,scheduledAt])
 }

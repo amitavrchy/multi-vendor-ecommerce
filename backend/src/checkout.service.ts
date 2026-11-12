@@ -6,6 +6,7 @@ import { config } from './config';
 import { allocate, commission, couponDiscount, SHIPPING_MINOR } from './common/money';
 import { ProviderRegistry } from './modules/payments/registry';
 import { IntentResult } from './modules/payments/provider';
+import { purchaseItems, checkoutCoupon, PurchaseSource } from './commerce-pricing';
 export async function finishReservations(
   tx: Prisma.TransactionClient,
   orderId: string,
@@ -31,6 +32,8 @@ export async function clearPurchasedCart(
   orderId: string,
   userId: string,
 ) {
+  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+  if (order.sourceKind !== 'CART') return;
   const rows = await tx.stockReservation.findMany({ where: { orderId } });
   for (const r of rows)
     await tx.cartItem.deleteMany({
@@ -45,10 +48,27 @@ export class CheckoutService {
   ) {}
   async start(
     user: Principal,
-    data: { addressId: string; provider: string; couponCode?: string },
+    data: { addressId: string; provider: string; couponCode?: string } & PurchaseSource,
     key: string,
   ) {
-    const previous = await this.db.payment.findUnique({ where: { idempotencyKey: key } });
+    if (data.quoteId && data.renewalId) throw new BadRequestException('Choose one purchase source');
+    const sourceRef = data.quoteId
+      ? `quote:${data.quoteId}`
+      : data.renewalId
+        ? `renewal:${data.renewalId}`
+        : null;
+    let previous = await this.db.payment.findUnique({ where: { idempotencyKey: key } });
+    if (!previous && sourceRef) {
+      const existing = await this.db.order.findUnique({
+        where: { sourceRef },
+        include: { payment: true },
+      });
+      if (existing) {
+        if (existing.userId !== user.id)
+          throw new ConflictException('Purchase belongs to another account');
+        previous = existing.payment;
+      }
+    }
     if (previous) {
       const order = await this.db.order.findUniqueOrThrow({ where: { id: previous.orderId } });
       if (order.userId !== user.id)
@@ -56,7 +76,8 @@ export class CheckoutService {
       if (previous.status !== 'CREATED')
         return { orderId: order.id, intent: previous.raw, status: previous.status };
     }
-    const provider = this.providers.get(data.provider);
+    if (previous) key = previous.idempotencyKey;
+    const provider = this.providers.get(previous?.provider || data.provider);
     const order = previous
       ? await this.db.order.findUniqueOrThrow({ where: { id: previous.orderId } })
       : await this.db.atomic(async (tx) => {
@@ -64,16 +85,7 @@ export class CheckoutService {
             where: { id: data.addressId, userId: user.id },
           });
           if (!address) throw new BadRequestException('Choose your shipping address');
-          const cart = await tx.cart.findUnique({
-            where: { userId: user.id },
-            include: {
-              items: {
-                include: {
-                  variant: { include: { product: { include: { vendor: true, category: true } } } },
-                },
-              },
-            },
-          });
+          const cart = { items: await purchaseItems(tx, user.id, data) };
           if (!cart?.items.length) throw new BadRequestException('Your bag is empty');
           const groups = new Map<string, typeof cart.items>();
           for (const item of cart.items) {
@@ -86,15 +98,9 @@ export class CheckoutService {
             groups.set(id, [...(groups.get(id) || []), item]);
           }
           const goodsMinor = cart.items.reduce((s, i) => s + i.qty * i.variant.priceMinor, 0);
-          const coupon = data.couponCode
-            ? await tx.coupon.findFirst({
-                where: {
-                  code: data.couponCode.toUpperCase(),
-                  active: true,
-                  expiresAt: { gt: new Date() },
-                },
-              })
-            : null;
+          if (!Number.isSafeInteger(goodsMinor) || goodsMinor > 1900000000)
+            throw new BadRequestException('Order value exceeds the supported checkout limit');
+          const coupon = await checkoutCoupon(tx, user.id, data.couponCode, goodsMinor);
           if (data.couponCode && (!coupon || goodsMinor < coupon.minGoodsMinor))
             throw new BadRequestException('Coupon is invalid or minimum spend has not been met');
           const discountMinor = coupon ? couponDiscount(goodsMinor, coupon) : 0;
@@ -107,6 +113,8 @@ export class CheckoutService {
           const created = await tx.order.create({
             data: {
               userId: user.id,
+              sourceKind: data.quoteId ? 'QUOTE' : data.renewalId ? 'RENEWAL' : 'CART',
+              sourceRef,
               goodsMinor,
               shippingMinor,
               discountMinor,
@@ -115,6 +123,30 @@ export class CheckoutService {
               couponCode: coupon?.code,
             },
           });
+          if (coupon?.singleUse)
+            await tx.coupon.update({
+              where: { code: coupon.code },
+              data: { claimedOrderId: created.id },
+            });
+          if (data.quoteId) {
+            const changed = await tx.quoteRequest.updateMany({
+              where: {
+                id: data.quoteId,
+                userId: user.id,
+                status: 'ACCEPTED',
+                expiresAt: { gt: new Date() },
+              },
+              data: { status: 'CONSUMED', orderId: created.id },
+            });
+            if (!changed.count) throw new ConflictException('Quote already consumed');
+          }
+          if (data.renewalId) {
+            const changed = await tx.subscriptionRenewal.updateMany({
+              where: { id: data.renewalId, status: 'DUE', subscription: { userId: user.id } },
+              data: { status: 'ORDERED', orderId: created.id },
+            });
+            if (!changed.count) throw new ConflictException('Renewal already ordered');
+          }
           for (let n = 0; n < groupArray.length; n++) {
             const [vendorId, items] = groupArray[n];
             const commissionMinor = items.reduce(
@@ -237,9 +269,43 @@ export class CheckoutService {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order || order.status !== 'PENDING_PAYMENT') return;
       await finishReservations(tx, orderId, false);
-      await tx.order.update({ where: { id: orderId }, data: { status: 'CANCELLED' } });
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'CANCELLED', sourceRef: null },
+      });
+      await tx.coupon.updateMany({
+        where: { claimedOrderId: orderId, singleUse: true },
+        data: { claimedOrderId: null },
+      });
+      await tx.quoteRequest.updateMany({
+        where: { orderId, status: 'CONSUMED' },
+        data: { status: 'ACCEPTED', orderId: null },
+      });
+      await tx.subscriptionRenewal.updateMany({
+        where: { orderId, status: 'ORDERED' },
+        data: { status: 'DUE', orderId: null },
+      });
       await tx.vendorOrder.updateMany({ where: { orderId }, data: { status: 'CANCELLED' } });
       await tx.payment.update({ where: { orderId }, data: { status: 'CANCELLED' } });
+    });
+  }
+  async preview(user: Principal, data: PurchaseSource & { couponCode?: string }) {
+    return this.db.atomic(async (tx) => {
+      const items = await purchaseItems(tx, user.id, data),
+        goodsMinor = items.reduce((s, i) => s + i.qty * i.variant.priceMinor, 0);
+      const coupon = await checkoutCoupon(tx, user.id, data.couponCode, goodsMinor),
+        discountMinor = coupon ? couponDiscount(goodsMinor, coupon) : 0;
+      const shippingMinor =
+        new Set(items.map((i) => i.variant.product.vendorId)).size * SHIPPING_MINOR;
+      return {
+        items,
+        goodsMinor,
+        retailGoodsMinor: items.reduce((s, i) => s + i.qty * i.variant.retailPriceMinor, 0),
+        discountMinor,
+        shippingMinor,
+        grandMinor: goodsMinor + shippingMinor - discountMinor,
+        couponFunding: coupon?.funding ?? null,
+      };
     });
   }
 }

@@ -29,9 +29,22 @@ export class CheckoutController {
         addressId: z.string(),
         provider: z.string(),
         couponCode: z.string().max(40).optional(),
+        quoteId: z.string().max(100).optional(),
+        renewalId: z.string().max(100).optional(),
       }),
       body,
     );
     return this.checkout.start(user, d, input(z.string().min(16).max(100), key));
+  }
+  @Post('checkout/preview') preview(@Actor() user: Principal, @Body() body: unknown) {
+    const data = input(
+      z.object({
+        couponCode: z.string().max(40).optional(),
+        quoteId: z.string().max(100).optional(),
+        renewalId: z.string().max(100).optional(),
+      }),
+      body,
+    );
+    return this.checkout.preview(user, data);
   }
 }
