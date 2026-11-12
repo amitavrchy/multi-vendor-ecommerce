@@ -16,6 +16,8 @@ import { Product, Order, money } from '@/lib/types';
 import { Gate } from '@/components/gate';
 import { useStore } from '@/components/provider';
 import { Action, Badge, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
+import { AdminBusinessPanel } from '@/components/business-panels';
+import { MarketingPanel } from '@/components/marketing-panel';
 type AdminVendor = {
   id: string;
   storeName: string;
@@ -51,6 +53,8 @@ type Batch = {
   items: { id: string; amountMinor: number; vendorOrder: { vendor: { storeName: string } } }[];
 };
 const tabs = [
+  ['business', 'Business verification', Users],
+  ['marketing', 'Marketing', ScrollText],
   ['overview', 'Overview', LayoutDashboard],
   ['vendors', 'Stores & KYC', Store],
   ['products', 'Catalog', Box],
@@ -143,6 +147,8 @@ function AdminDashboard() {
             ))}
         </aside>
         <div className="dashboard-content">
+          {tab === 'business' && user?.role === 'PLATFORM_ADMIN' && <AdminBusinessPanel />}
+          {tab === 'marketing' && user?.role === 'PLATFORM_ADMIN' && <MarketingPanel />}
           {tab === 'overview' && (
             <>
               {overview.loading ? (

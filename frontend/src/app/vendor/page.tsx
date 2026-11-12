@@ -19,6 +19,7 @@ import { useStore } from '@/components/provider';
 import { Action, Badge, Empty, ErrorBox, Loading, Modal, PageTitle } from '@/components/ui';
 import { UploadButton, ProductImageInput } from '@/components/upload';
 import { AnalyticsPanel } from '@/components/analytics-panel';
+import { SellerBusinessPanel } from '@/components/business-panels';
 type Vendor = {
   id: string;
   storeName: string;
@@ -37,6 +38,7 @@ type Stats = {
   ledger: { id: string; type: string; amountMinor: number; createdAt: string }[];
 };
 const tabs = [
+  ['business', 'Business sales', Users],
   ['analytics', 'Analytics', BarChart3],
   ['overview', 'Overview', LayoutDashboard],
   ['products', 'Products', Box],
@@ -159,6 +161,7 @@ function VendorDashboard() {
             ))}
         </aside>
         <div className="dashboard-content">
+          {tab === 'business' && user?.role === 'VENDOR_OWNER' && <SellerBusinessPanel />}
           {tab === 'analytics' && user?.role === 'VENDOR_OWNER' && <AnalyticsPanel />}
           {tab === 'overview' && (
             <>

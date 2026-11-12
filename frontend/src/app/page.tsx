@@ -21,6 +21,7 @@ import { useApi } from '@/lib/api';
 import { CatalogResult, Category } from '@/lib/types';
 import { ProductCard } from '@/components/product-card';
 import { ErrorBox, Loading } from '@/components/ui';
+import { NewsletterSignup } from '@/components/growth-tools';
 import './landing.css';
 const icons: Record<string, typeof Armchair> = {
   Armchair,
@@ -342,6 +343,9 @@ export default function Home() {
             Start your store <ArrowUpRight size={20} />
           </Link>
         </div>
+      </section>
+      <section className="container">
+        <NewsletterSignup />
       </section>
       <section className="container landing-faq">
         <p className="eyebrow">A LITTLE PEACE OF MIND</p>
