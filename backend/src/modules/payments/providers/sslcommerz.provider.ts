@@ -1,5 +1,7 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { CreateIntentInput, PaymentProvider } from '../provider';
+import { createHash } from 'node:crypto';
+import { RefundContext, RefundResult } from '../refund';
 export class SslCommerzProvider implements PaymentProvider {
   code = 'SSLCOMMERZ';
   supportsPartialRefund = true;
@@ -72,12 +74,69 @@ export class SslCommerzProvider implements PaymentProvider {
       providerRef: d.tran_id as string,
       status: 'SUCCEEDED' as const,
       amountMinor: Math.round(Number(d.amount) * 100),
+      refundRef: typeof d.bank_tran_id === 'string' ? d.bank_tran_id : undefined,
     };
   }
-  async refund(ref: string, _amountMinor: number, key: string) {
+  private async refundRequest(parameters: Record<string, string>) {
+    const query = new URLSearchParams({ ...this.credentials(), ...parameters, format: 'json' });
+    const response = await fetch(
+      `${this.base}/validator/api/merchantTransIDvalidationAPI.php?${query}`,
+      { signal: AbortSignal.timeout(15000) },
+    );
+    const data = await response.json();
+    if (!response.ok || data.APIConnect !== 'DONE')
+      throw new ServiceUnavailableException('SSLCommerz refund verification is unavailable');
+    return data;
+  }
+  async refund(
+    ref: string,
+    amountMinor: number,
+    key: string,
+    context?: RefundContext,
+  ): Promise<RefundResult> {
     this.credentials();
-    // Reconcile in the merchant panel using the original merchant transaction ID.
-    // Initiating a gateway refund is not proof that funds reached the customer.
-    return { providerRef: `ssl_manual:${ref}:${key}`, status: 'PENDING' as const };
+    if (!context?.transactionRef)
+      return { providerRef: `ssl_manual:${ref}:${key}`, status: 'MANUAL_REVIEW' };
+    const refundId = createHash('sha256').update(key).digest('hex').slice(0, 30);
+    const data = await this.refundRequest({
+      bank_tran_id: context.transactionRef,
+      refund_trans_id: refundId,
+      refund_amount: (amountMinor / 100).toFixed(2),
+      refund_remarks: 'Marketplace return or cancellation',
+      refe_id: refundId,
+    });
+    if (data.bank_tran_id !== context.transactionRef)
+      throw new BadRequestException('SSLCommerz refund transaction mismatch');
+    if (data.status === 'failed')
+      return { providerRef: data.refund_ref_id || refundId, status: 'FAILED' };
+    if (!['success', 'processing'].includes(data.status) || typeof data.refund_ref_id !== 'string')
+      throw new ServiceUnavailableException('SSLCommerz refund outcome requires reconciliation');
+    return { providerRef: data.refund_ref_id, status: 'PROCESSING' };
+  }
+  async checkRefund(ref: string, context: RefundContext): Promise<RefundResult> {
+    const data = await this.refundRequest({ refund_ref_id: ref });
+    if (
+      data.refund_ref_id !== ref ||
+      !context.transactionRef ||
+      data.bank_tran_id !== context.transactionRef ||
+      ((data.tran_id || data.trans_id) && (data.tran_id || data.trans_id) !== context.paymentRef)
+    )
+      throw new BadRequestException('SSLCommerz refund verification mismatch');
+    if (
+      data.refund_amount !== undefined &&
+      Math.round(Number(data.refund_amount) * 100) !== context.amountMinor
+    )
+      throw new BadRequestException('SSLCommerz refund amount mismatch');
+    if (!['refunded', 'processing', 'cancelled', 'failed'].includes(data.status))
+      throw new ServiceUnavailableException('Unknown SSLCommerz refund status');
+    return {
+      providerRef: ref,
+      status:
+        data.status === 'refunded'
+          ? 'SUCCEEDED'
+          : data.status === 'processing'
+            ? 'PROCESSING'
+            : 'FAILED',
+    };
   }
 }

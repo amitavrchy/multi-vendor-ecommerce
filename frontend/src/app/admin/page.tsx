@@ -36,6 +36,8 @@ type Rma = {
   };
 };
 type Refund = {
+  lastError?: string | null;
+  nextCheckAt?: string;
   id: string;
   status: string;
   amountMinor: number;
@@ -521,6 +523,10 @@ function AdminDashboard() {
                         <td>{money(r.amountMinor)}</td>
                         <td>
                           <Badge status={r.status} />
+                          {r.lastError && <small>{r.lastError}</small>}
+                          {r.status === 'PROCESSING' && r.nextCheckAt && (
+                            <small>Next check: {new Date(r.nextCheckAt).toLocaleString()}</small>
+                          )}
                         </td>
                         <td>
                           {r.status === 'MANUAL_REVIEW' && user?.role === 'PLATFORM_ADMIN' && (
@@ -533,6 +539,28 @@ function AdminDashboard() {
                             >
                               Confirm transfer
                             </button>
+                          )}
+                          {['PENDING', 'PROCESSING'].includes(r.status) &&
+                            user?.role === 'PLATFORM_ADMIN' && (
+                              <Action
+                                className="button secondary"
+                                onClick={() => perform(`/returns/refunds/${r.id}/reconcile`, {})}
+                              >
+                                Recheck gateway
+                              </Action>
+                            )}
+                          {r.status === 'FAILED' && user?.role === 'PLATFORM_ADMIN' && (
+                            <Action
+                              className="button secondary"
+                              onClick={() =>
+                                perform(`/returns/refunds/${r.id}/manual-review`, {
+                                  reason:
+                                    'Provider reported a failed refund; operator will arrange and reconcile an external transfer.',
+                                })
+                              }
+                            >
+                              Arrange manual refund
+                            </Action>
                           )}
                         </td>
                       </tr>

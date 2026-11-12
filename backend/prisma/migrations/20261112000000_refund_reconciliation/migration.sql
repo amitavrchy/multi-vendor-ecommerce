@@ -1,0 +1,7 @@
+ALTER TABLE "Refund" ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "failureCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "lastError" TEXT,
+ADD COLUMN "nextCheckAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN "leaseUntil" TIMESTAMP(3),
+ADD COLUMN "leaseToken" TEXT;
+CREATE INDEX "Refund_status_nextCheckAt_idx" ON "Refund"("status", "nextCheckAt");

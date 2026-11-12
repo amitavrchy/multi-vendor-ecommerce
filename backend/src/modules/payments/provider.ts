@@ -1,3 +1,4 @@
+import { RefundContext, RefundResult } from './refund';
 export interface CreateIntentInput {
   orderId: string;
   amountMinor: number;
@@ -21,6 +22,8 @@ export interface NormalizedEvent {
   amountMinor: number;
 }
 export interface PaymentProvider {
+  refundRetrySafe?: boolean;
+  checkRefund?(ref: string, context: RefundContext): Promise<RefundResult>;
   reconciliationBody?(ref: string): unknown;
   callbackReference?(body: unknown): string;
   code: string;
@@ -37,5 +40,6 @@ export interface PaymentProvider {
     ref: string,
     amountMinor: number,
     key: string,
-  ): Promise<{ providerRef: string; status?: 'PENDING' | 'SUCCEEDED' }>;
+    context?: RefundContext,
+  ): Promise<{ providerRef: string; status?: RefundResult['status'] | 'PENDING' }>;
 }

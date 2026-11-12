@@ -56,15 +56,24 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
+      await this.refunds.reconcileDue();
       const pendingPayments = await this.db.payment.findMany({
         where: {
           status: 'REQUIRES_ACTION',
+          provider: { in: this.providers.reconciliationCodes() },
+          nextCheckAt: { lte: new Date() },
           providerRef: { not: null },
           order: { status: 'PENDING_PAYMENT' },
         },
         take: 10,
+        orderBy: [{ nextCheckAt: 'asc' }, { id: 'asc' }],
       });
       for (const payment of pendingPayments) {
+        const claim = await this.db.payment.updateMany({
+          where: { id: payment.id, status: 'REQUIRES_ACTION', nextCheckAt: { lte: new Date() } },
+          data: { nextCheckAt: new Date(Date.now() + 60000) },
+        });
+        if (!claim.count) continue;
         let adapter;
         try {
           adapter = this.providers.get(payment.provider);

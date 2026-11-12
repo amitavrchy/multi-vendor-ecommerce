@@ -177,4 +177,25 @@ export class ReturnsController {
       throw new BadRequestException('Only manual refunds can be confirmed here');
     return this.refunds.complete(id, d.transferReference);
   }
+  @Roles('PLATFORM_ADMIN') @Post('refunds/:id/reconcile') async reconcile(@Param('id') id: string) {
+    await this.refunds.process(id, true);
+    return this.db.refund.findUniqueOrThrow({ where: { id } });
+  }
+  @Roles('PLATFORM_ADMIN') @Post('refunds/:id/manual-review') async manual(
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const data = input(z.object({ reason: z.string().trim().min(10).max(1000) }), body);
+    const result = await this.db.refund.updateMany({
+      where: {
+        id,
+        status: 'FAILED',
+        OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }],
+      },
+      data: { status: 'MANUAL_REVIEW', lastError: data.reason },
+    });
+    if (!result.count)
+      throw new BadRequestException('Only failed refunds can be moved to manual review');
+    return { ok: true };
+  }
 }

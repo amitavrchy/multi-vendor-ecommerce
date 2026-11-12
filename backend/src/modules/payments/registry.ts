@@ -33,4 +33,9 @@ export class ProviderRegistry {
       supportsPartialRefund: p.supportsPartialRefund,
     }));
   }
+  reconciliationCodes() {
+    return [...this.providers.values()]
+      .filter((p) => p.available && p.reconciliationBody)
+      .map((p) => p.code);
+  }
 }

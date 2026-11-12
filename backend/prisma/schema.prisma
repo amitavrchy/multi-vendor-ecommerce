@@ -193,6 +193,7 @@ model StockReservation {
   @@index([expiresAt, status])
 }
 model Payment {
+  nextCheckAt DateTime @default(now())
   id String @id @default(cuid())
   orderId String @unique
   order Order @relation(fields: [orderId], references: [id])
@@ -205,8 +206,15 @@ model Payment {
   idempotencyKey String @unique
   raw Json?
   refunds Refund[]
+  @@index([status,nextCheckAt])
 }
 model Refund {
+  attempts Int @default(0)
+  failureCount Int @default(0)
+  lastError String?
+  nextCheckAt DateTime @default(now())
+  leaseUntil DateTime?
+  leaseToken String?
   returnRequestId String? @unique
   returnRequest ReturnRequest? @relation(fields:[returnRequestId], references:[id])
   id String @id @default(cuid())
@@ -218,6 +226,7 @@ model Refund {
   idempotencyKey String @unique
   providerRef String?
   createdAt DateTime @default(now())
+  @@index([status,nextCheckAt])
 }
 model ReturnRequest {
   id String @id @default(cuid())
