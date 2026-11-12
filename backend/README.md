@@ -37,6 +37,10 @@ Seed: 3 verified stores, 30 products, an address, and WELCOME10 (10% off goods a
 - Full-text search, live suggestions, filters/sort/paging, categories, details and account-synced wishlists with guest merge.
 - Four-product comparison, recorded price history, target-price/restock alerts, followed stores, personalized recommendations and local recently viewed history.
 - Seller analytics: 14/30/90-day Dhaka reporting windows, sales chart, accessible daily table, CSV export, top variants, followers and low-stock inventory.
+- Verified B2B accounts, wholesale tiers and private negotiated quotes with stock-backed checkout.
+- Customer-approved replenishment subscriptions with renewal reminders, pause/resume/skip/cancel.
+- Delivery-earned loyalty points, private single-use vouchers, referrals and return clawbacks.
+- Confirmed-email newsletter subscriptions and administrator campaign scheduling, segmentation and delivery reporting.
 - Editorial landing page with shoppable collections, interactive edits, maker story, seller invitation and expandable FAQs.
 - Registration, HTTP-only sessions, role/store scoping, profiles, addresses and notifications.
 - Private KYC/product uploads, admin approval/suspension, team access management, product/variant editing, moderation and inventory.
@@ -46,6 +50,8 @@ Seed: 3 verified stores, 30 products, an address, and WELCOME10 (10% off goods a
 - Category/vendor commissions, platform/vendor-funded coupons, weekly payout batches, SMTP/SMS receipts/retries, delayed review requests, Redis cache/rate limiting and Socket.IO clustering.
 
 ## Integration boundaries
+
+Business/growth rules and operational details: [Business, subscriptions and growth](docs/BUSINESS_GROWTH.md).
 
 The adapters and application workflows are implemented and automatically tested. External services still need your merchant credentials, public HTTPS callback URLs, SMTP/SMS configuration, and private S3-compatible storage for production uploads. Without credentials, payment methods stay unavailable and outbound delivery receipts are marked SKIPPED. Development uploads use ignored local disk storage. No real external charge or transfer was made during testing; merchant sandbox/live certification remains an operational step.
 

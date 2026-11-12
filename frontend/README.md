@@ -17,6 +17,10 @@ Storefront: <http://localhost:3187>. The API is proxied to <http://localhost:418
 - Product pages — follow stores, view actual recorded price changes, set price targets and request restock alerts.
 - `/activity` — manage account-owned price/stock alerts and followed stores.
 - Seller → Analytics — 14/30/90-day sales chart, accessible daily data, CSV, top variants, followers and inventory watchlist.
+- `/business` — verified business applications and private negotiated quotes. Seller → Business sales sets wholesale tiers and sends offers; Admin → Business verification approves buyers.
+- `/subscriptions` — scheduled replenishment with customer-approved checkout, renewal reminders and pause/resume/skip/cancel.
+- `/rewards` — loyalty ledger, referral codes and personal vouchers, including adjustments after returns.
+- `/newsletter` and the landing signup — email confirmation/unsubscribe. Admin → Marketing manages drafts, schedules, segments and delivery counts.
 
 ## Check and build
 

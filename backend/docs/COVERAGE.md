@@ -24,7 +24,11 @@
 | Discovery | Account favourites/guest merge, store following, personalized recommendations, comparison and recently viewed history |
 | Shopping alerts | Account-owned price/restock watches, generation-based outbox deduplication, notifications and email delivery |
 | Seller intelligence | Scoped Dhaka sales/ledger reporting, charts, daily table, CSV, popular variants and low-stock watchlist |
-| Landing | Editorial hero, shoppable collections, live category counts, interactive product edits, seller story/invitation and FAQ |
+| B2B buying | Business verification, quantity tiers, buyer/seller-scoped RFQ offers, expiry and single-use stock-backed quote checkout |
+| Subscriptions | Customer-approved replenishment renewals, reminders, pause/resume/skip/cancel; no off-session automatic charges |
+| Loyalty/referrals | Delivery-earned points, private single-use vouchers, concurrent redemption protection and return/referral clawbacks |
+| Marketing | Double opt-in newsletter, encrypted tokens, all/business campaigns, schedules, queue/delivery reporting and dispatch-time suppression |
+| Landing | Editorial hero, shoppable collections, live category counts, interactive product edits, seller story/invitation, newsletter and FAQ |
 | Cache | Redis category/product cache, mutation invalidation, CDN surrogate tag/purge adapter and Redis rate buckets |
 
 ## Acceptance evidence

@@ -22,6 +22,8 @@ For payouts, configure encrypted bank details and deliver shipments. Admin → M
 
 ## Deployment work remaining
 
+Business, loyalty, referral, subscription and campaign operations are described in [Business and growth](BUSINESS_GROWTH.md). Configure SMTP before enabling newsletter signup or scheduling a campaign. Subscription renewals require customer-approved payment; automatic off-session billing is not enabled. The persistent encryption key also protects newsletter tokens, so key rotation must re-encrypt them together with bank instructions.
+
 Configure HTTPS/secure cookies, private databases, backups, merchant credentials and a persistent encryption key. Key rotation needs re-encryption. Redis supplies shared rate limits/cache and Socket.IO pub/sub; configure trusted proxy hops and load-balancer routing for the deployment.
 
 Set S3_BUCKET/REGION/ENDPOINT and credentials for private uploads. Local disk is development-only. KYC reads require owner/admin authentication; product images are public. Set SMTP_URL/SMTP_FROM to deliver email and SMS_URL/SMS_AUTH_TOKEN for an HTTP SMS transport accepting `{to, body, idempotencyKey}`. The SMS endpoint must honor that idempotency key. Missing transports record SKIPPED; failed transports retry using durable receipts. SMTP is at least once, with stable Message-ID values.

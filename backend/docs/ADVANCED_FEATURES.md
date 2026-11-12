@@ -1,6 +1,6 @@
 # Shopping intelligence and storefront upgrade
 
-This increment adds working discovery, retention and seller reporting to the existing multi-vendor commerce platform. It does not claim to implement every feature from every marketplace; subscriptions, B2B procurement, auctions, live shopping and native apps are separate product tracks.
+The marketplace includes shopping discovery, seller reporting and business/growth workflows. See [Business and growth](BUSINESS_GROWTH.md) for B2B pricing/quotes, replenishment subscriptions, loyalty/referrals and consent-based campaigns. Auctions, live shopping and native apps remain separate product tracks.
 
 | Capability | Behavior |
 | --- | --- |
