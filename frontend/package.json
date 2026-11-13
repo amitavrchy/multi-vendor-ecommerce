@@ -3,9 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev": "node init && next dev --port 3187",
-    "build": "node init && next build",
-    "start": "node init && next start --port 3187",
+    "dev": "next dev --port 3187",
+    "build": "next build",
+    "start": "next start --port 3187",
     "typecheck": "next typegen && tsc --noEmit",
     "test:e2e": "playwright test",
     "format": "prettier --write src e2e",
